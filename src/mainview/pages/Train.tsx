@@ -89,9 +89,16 @@ export default function Train({ assets, runs, onRunsChange }: Props) {
   }
 
   async function handleStart(run: TrainingRun) {
+    // Optimistically mark as training immediately so the stop button appears
+    // and the terminal log starts showing setup messages while the RPC is pending
+    // (venv creation + pip install can take several minutes on first run).
+    onRunsChange(runs.map(r =>
+      r.id === run.id ? { ...r, status: "training" as const, updatedAt: "just now" } : r
+    ));
+
     const runAssets = assets.filter(a => run.assetIds.includes(a.id));
     try {
-      const { started } = await getRPC().request.startTraining({
+      await getRPC().request.startTraining({
         id:         run.id,
         name:       run.name,
         assetPaths: runAssets.map(a => a.storagePath),
@@ -103,13 +110,12 @@ export default function Train({ assets, runs, onRunsChange }: Props) {
         device:     run.device,
         outputPath: run.outputPath,
       });
-      if (started) {
-        onRunsChange(runs.map(r =>
-          r.id === run.id ? { ...r, status: "training" as const, updatedAt: "just now" } : r
-        ));
-      }
     } catch (err) {
       console.error("Failed to start training:", err);
+      // Revert status if the RPC itself threw.
+      onRunsChange(runs.map(r =>
+        r.id === run.id ? { ...r, status: "failed" as const, updatedAt: "just now" } : r
+      ));
     }
   }
 
