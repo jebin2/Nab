@@ -22,6 +22,10 @@ export interface TrainingRun {
   assetIds: string[];      // references to Asset.id
   classMap: string[];      // final ordered class list for this run (remapped)
   baseModel: string;
+  epochs: number;
+  batchSize: number;       // -1 = auto
+  imgsz: number;
+  device: string;          // "auto" | "cpu" | "cuda:0" | "mps"
   outputPath: string;      // absolute FS path for weights + results
   status: RunStatus;
   mAP?: number;
