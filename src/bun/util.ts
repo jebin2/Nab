@@ -120,14 +120,10 @@ export async function downloadPythonRuntime(
 // Ensures the bundled Python runtime + ultralytics venv are ready.
 // Returns VENV_PYTHON so the caller can spawn Python directly.
 
-export async function prepareEnvironment(logPath: string, runId: string): Promise<string> {
-	return prepareEnvironmentWithOptions(logPath, runId, false);
-}
-
-export async function prepareEnvironmentWithOptions(
+export async function prepareEnvironment(
 	logPath: string,
 	runId: string,
-	echoToStderr: boolean,
+	echoToStderr = false,
 ): Promise<string> {
 	const log = async (text: string) => {
 		await appendFile(logPath, JSON.stringify({ type: "stderr", text }) + "\n").catch(() => {});
@@ -213,7 +209,7 @@ export async function runInference(
 	echoToStderr = false,
 ): Promise<{ detections: Detection[]; inferenceMs: number; error: string | null }> {
 	try {
-		await prepareEnvironmentWithOptions(logPath, runId, echoToStderr);
+		await prepareEnvironment(logPath, runId, echoToStderr);
 	} catch (err) {
 		return { detections: [], inferenceMs: 0, error: `Environment setup failed: ${(err as Error).message}` };
 	}

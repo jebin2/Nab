@@ -8,7 +8,7 @@
  *   ./detect photo.jpg --log_path run.log --output_path results.json
  */
 
-import { mkdir, writeFile } from "fs/promises";
+import { mkdir, mkdtemp, writeFile } from "fs/promises";
 import { existsSync } from "fs";
 import { join, basename } from "path";
 import { createHash } from "crypto";
@@ -65,8 +65,7 @@ if (!existsSync(modelPath)) {
 
 // ── Extract embedded Python helpers → temp ───────────────────────────────────
 
-const inferDir = join(tmpdir(), "yolostudio-infer");
-await mkdir(inferDir, { recursive: true });
+const inferDir = await mkdtemp(join(tmpdir(), "yolostudio-infer-"));
 const inferPyTmpPath = join(inferDir, "infer.py");
 await writeFile(inferPyTmpPath, await Bun.file(inferPyPath).text());
 await writeFile(join(inferDir, "yolo_utils.py"), await Bun.file(yoloUtilsPyPath).text());
