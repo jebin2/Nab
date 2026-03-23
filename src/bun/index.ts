@@ -291,8 +291,7 @@ const rpc = defineElectrobunRPC("bun", {
 			},
 
 			revealInFilesystem: async ({ path }: { path: string }) => {
-				const dir = path.includes(".") && !path.endsWith("/")
-					? path.split("/").slice(0, -1).join("/") : path;
+				const dir = path.split("/").slice(0, -1).join("/") || "/";
 				const cmd = process.platform === "darwin"
 					? ["open", "-R", path]
 					: process.platform === "win32" ? ["explorer", `/select,${path}`] : ["xdg-open", dir];
