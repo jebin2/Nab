@@ -78,6 +78,17 @@ type RPCSchema = {
         params:   { runId: string };
         response: Record<string, never>;
       };
+      runInference: {
+        params: { imagePath: string; outputPath: string; confidence: number };
+        response: {
+          detections: Array<{
+            classIndex: number; label: string; confidence: number;
+            cx: number; cy: number; w: number; h: number;
+          }>;
+          inferenceMs: number;
+          error: string | null;
+        };
+      };
     };
     messages: {};
     push: {};

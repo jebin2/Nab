@@ -6,6 +6,7 @@ import { homedir } from "os";
 
 const IMAGE_EXTS      = new Set([".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".tiff", ".tif"]);
 const TRAIN_SCRIPT    = join(import.meta.dir, "../python/train.py");
+const INFER_SCRIPT    = join(import.meta.dir, "../python/infer.py");
 const RUNTIME_TARBALL = join(import.meta.dir, "../python/python-runtime.tar.gz");
 
 const YOLO_DIR        = join(homedir(), ".yolostudio");
@@ -363,6 +364,50 @@ const rpc = defineElectrobunRPC("bun", {
 					return { lines };
 				} catch {
 					return { lines: [] };
+				}
+			},
+
+			runInference: async ({ imagePath, outputPath, confidence }: {
+				imagePath: string; outputPath: string; confidence: number;
+			}) => {
+				if (!(await Bun.file(VENV_READY_MARKER).exists())) {
+					return { detections: [], inferenceMs: 0, error: "Python environment not ready. Train a model first to install dependencies." };
+				}
+				const modelPath = join(outputPath, "weights", "weights", "best.pt");
+				if (!(await Bun.file(modelPath).exists())) {
+					return { detections: [], inferenceMs: 0, error: "Model weights not found — the output directory may have been moved or deleted." };
+				}
+
+				const t0  = Date.now();
+				const proc = Bun.spawn([VENV_PYTHON, INFER_SCRIPT], {
+					stdin:  "pipe",
+					stdout: "pipe",
+					stderr: "pipe",
+				});
+
+				proc.stdin.write(JSON.stringify({ imagePath, modelPath, confidence }));
+				proc.stdin.end();
+
+				const decoder = new TextDecoder();
+				let stdout = "";
+				let stderr = "";
+				await Promise.all([
+					(async () => { for await (const chunk of proc.stdout) stdout += decoder.decode(chunk); })(),
+					(async () => { for await (const chunk of proc.stderr) stderr += decoder.decode(chunk); })(),
+				]);
+				await proc.exited;
+
+				const inferenceMs = Date.now() - t0;
+				const line = stdout.trim().split("\n").filter(Boolean).pop() ?? "";
+				try {
+					const data = JSON.parse(line);
+					if (data.error) return { detections: [], inferenceMs, error: data.error };
+					return { detections: data.detections ?? [], inferenceMs, error: null };
+				} catch {
+					if (stderr.trim()) console.error("[infer] stderr:\n", stderr.trim());
+					if (stdout.trim()) console.error("[infer] stdout:\n", stdout.trim());
+					const hint = stderr.trim().split("\n").filter(l => l.trim()).pop() ?? "";
+					return { detections: [], inferenceMs, error: `Inference failed.${hint ? ` ${hint}` : ""}` };
 				}
 			},
 
