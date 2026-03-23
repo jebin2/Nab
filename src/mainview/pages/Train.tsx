@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from "react";
-import { Plus, FolderOpen, Cpu, Play, Square, Trash2 } from "lucide-react";
+import { useState, useEffect, useRef, useMemo } from "react";
+import { Plus, FolderOpen, Cpu, Play, Square, Trash2, ChevronLeft, Terminal } from "lucide-react";
 import { type TrainingRun, type Asset } from "../lib/types";
 import { RUN_STATUS_LABELS, RUN_STATUS_COLORS, BASE_MODELS, DEVICES, CLASS_COLORS } from "../lib/constants";
 import { getRPC } from "../lib/rpc";
@@ -37,6 +37,7 @@ function parseLog(lines: string[]): { progress?: LogProgress; done?: LogDone; er
 
 export default function Train({ assets, runs, onRunsChange }: Props) {
   const [showModal, setShowModal]         = useState(false);
+  const [detailRun, setDetailRun]         = useState<TrainingRun | null>(null);
   const [runProgress, setRunProgress]     = useState<Record<string, LogProgress>>({});
 
   // Keep a stable ref so the polling interval always sees the latest runs/callback.
@@ -124,6 +125,20 @@ export default function Train({ assets, runs, onRunsChange }: Props) {
     }
   }
 
+  // When a run is selected, show the inline detail view.
+  if (detailRun) {
+    const liveRun = runs.find(r => r.id === detailRun.id) ?? detailRun;
+    return (
+      <RunDetailView
+        run={liveRun}
+        progress={runProgress[detailRun.id]}
+        onClose={() => setDetailRun(null)}
+        onStart={() => handleStart(liveRun)}
+        onStop={() => handleStop(liveRun)}
+      />
+    );
+  }
+
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg)" }}>
 
@@ -162,6 +177,7 @@ export default function Train({ assets, runs, onRunsChange }: Props) {
               run={run}
               assets={assets}
               progress={runProgress[run.id]}
+              onClick={() => setDetailRun(run)}
               onStart={() => handleStart(run)}
               onStop={() => handleStop(run)}
               onDelete={() => onRunsChange(runs.filter(r => r.id !== run.id))}
@@ -205,23 +221,26 @@ interface RunCardProps {
   run: TrainingRun;
   assets: Asset[];
   progress?: LogProgress;
+  onClick: () => void;
   onStart: () => void;
   onStop: () => void;
   onDelete: () => void;
 }
 
-function RunCard({ run, assets, progress, onStart, onStop, onDelete }: RunCardProps) {
+function RunCard({ run, assets, progress, onClick, onStart, onStop, onDelete }: RunCardProps) {
   const statusColor = RUN_STATUS_COLORS[run.status];
   const statusLabel = RUN_STATUS_LABELS[run.status];
   const runAssets   = assets.filter(a => run.assetIds.includes(a.id));
   const pct         = progress ? Math.round((progress.epoch / progress.epochs) * 100) : 0;
 
   return (
-    <div style={{
-      background: "var(--surface)", border: "1px solid var(--border)",
-      borderRadius: 8, overflow: "hidden",
-      transition: "border-color 0.15s",
-    }}
+    <div
+      onClick={onClick}
+      style={{
+        background: "var(--surface)", border: "1px solid var(--border)",
+        borderRadius: 8, overflow: "hidden", cursor: "pointer",
+        transition: "border-color 0.15s",
+      }}
       onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "#444"; }}
       onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "var(--border)"; }}
     >
@@ -374,6 +393,360 @@ function ActionBtn({ Icon, color, title, onClick, danger }: {
       <Icon size={13} />
     </button>
   );
+}
+
+// ── RunDetailView ──────────────────────────────────────────────────────────────
+
+function RunDetailView({ run, progress, onClose, onStart, onStop }: {
+  run: TrainingRun;
+  progress?: LogProgress;
+  onClose: () => void;
+  onStart: () => void;
+  onStop: () => void;
+}) {
+  const [lines, setLines] = useState<string[]>([]);
+  const logEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let active = true;
+    async function load() {
+      try {
+        const { lines: l } = await getRPC().request.readTrainingLog({ outputPath: run.outputPath });
+        if (active) setLines(l);
+      } catch {}
+    }
+    load();
+    if (run.status !== "training") return;
+    const id = setInterval(load, 1000);
+    return () => { active = false; clearInterval(id); };
+  }, [run.id, run.status, run.outputPath]);
+
+  useEffect(() => {
+    logEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [lines.length]);
+
+  // Build loss history from all progress log entries for the chart.
+  const lossHistory = useMemo(() => {
+    const pts: Array<{ epoch: number; loss: number }> = [];
+    for (const line of lines) {
+      try {
+        const ev = JSON.parse(line);
+        if (ev.type === "progress" && ev.loss != null) pts.push({ epoch: ev.epoch, loss: ev.loss });
+      } catch {}
+    }
+    return pts;
+  }, [lines]);
+
+  // Latest done/validation info.
+  const { done } = parseLog(lines);
+
+  const statusColor = RUN_STATUS_COLORS[run.status];
+  const pct = progress ? Math.round((progress.epoch / progress.epochs) * 100) : (run.mAP != null ? 100 : 0);
+  const totalEpochs = progress?.epochs ?? run.epochs;
+  const currentEpoch = progress?.epoch ?? (run.mAP != null ? run.epochs : 0);
+
+  // SVG chart: map loss values into 800×200 viewBox (20px padding top/bottom).
+  const chartPoints = useMemo(() => {
+    const data = lossHistory;
+    if (data.length < 2) return "";
+    const maxE = data[data.length - 1].epoch;
+    const minL = Math.min(...data.map(d => d.loss));
+    const maxL = Math.max(...data.map(d => d.loss));
+    const rangeL = maxL - minL || 1;
+    return data.map(d => {
+      const x = (d.epoch / maxE) * 800;
+      const y = 200 - ((d.loss - minL) / rangeL) * 160 - 20;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(" ");
+  }, [lossHistory]);
+
+  // Validation metrics (from done, or latest progress).
+  const mAP50    = done?.mAP50    ?? run.mAP    ?? progress?.mAP  ?? null;
+  const mAP5095  = done?.mAP50_95 ?? null;
+
+  return (
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg)" }}>
+
+      {/* ── Top bar ── */}
+      <div style={{ padding: "12px 24px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 16, flexShrink: 0 }}>
+        <button
+          onClick={onClose}
+          style={{
+            display: "flex", alignItems: "center", gap: 5, background: "none", border: "none",
+            cursor: "pointer", color: "var(--text-muted)", fontSize: 13, fontFamily: "inherit", padding: "4px 0",
+          }}
+        >
+          <ChevronLeft size={15} /> Back
+        </button>
+        <div style={{ width: 1, height: 16, background: "var(--border)" }} />
+        <span style={{ fontFamily: "monospace", fontWeight: 700, fontSize: 14, color: "var(--text)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {run.name}
+        </span>
+        <span style={{
+          padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 600,
+          background: statusColor + "22", border: `1px solid ${statusColor}55`, color: statusColor,
+          letterSpacing: "0.04em", textTransform: "uppercase", flexShrink: 0,
+        }}>
+          {RUN_STATUS_LABELS[run.status]}
+        </span>
+        {run.status === "idle" && (
+          <button
+            onClick={onStart}
+            style={{
+              display: "flex", alignItems: "center", gap: 6, padding: "6px 16px", borderRadius: 6,
+              border: "none", background: "var(--accent)", color: "#fff",
+              fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+            }}
+          >
+            <Play size={13} fill="#fff" /> Start Training
+          </button>
+        )}
+        {run.status === "training" && (
+          <button
+            onClick={onStop}
+            style={{
+              display: "flex", alignItems: "center", gap: 6, padding: "6px 16px", borderRadius: 6,
+              border: "none", background: "#EF4444", color: "#fff",
+              fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+            }}
+          >
+            <Square size={13} fill="#fff" /> Stop
+          </button>
+        )}
+      </div>
+
+      {/* ── Config strip ── */}
+      <div style={{
+        padding: "10px 24px", borderBottom: "1px solid var(--border)",
+        display: "flex", gap: 28, alignItems: "center", flexShrink: 0, flexWrap: "wrap",
+        background: "var(--surface)",
+      }}>
+        {[
+          ["Model",   run.baseModel],
+          ["Epochs",  String(run.epochs)],
+          ["Batch",   run.batchSize === -1 ? "auto" : String(run.batchSize)],
+          ["Img",     `${run.imgsz}px`],
+          ["Device",  run.device],
+          ["Classes", String(run.classMap.length)],
+        ].map(([k, v]) => (
+          <div key={k}>
+            <div style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 2 }}>{k}</div>
+            <div style={{ fontSize: 12, color: "var(--text)", fontFamily: "monospace" }}>{v}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Main area: chart (left) + metrics (right) ── */}
+      <div style={{ flex: 1, display: "grid", gridTemplateColumns: "1fr 280px", gap: 0, overflow: "hidden" }}>
+
+        {/* Left column: chart + terminal */}
+        <div style={{ display: "flex", flexDirection: "column", overflow: "hidden", borderRight: "1px solid var(--border)" }}>
+
+          {/* Loss chart */}
+          <div style={{ padding: "16px 20px", background: "var(--surface)", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+              {run.status === "training" && (
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--accent)", display: "inline-block", animation: "pulse 1.5s infinite" }} />
+              )}
+              <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--text)" }}>
+                Live Network Loss
+              </span>
+              {run.status === "training" && (
+                <span style={{
+                  background: "var(--surface-2)", border: "1px solid var(--accent)33",
+                  color: "var(--accent)", fontSize: 10, padding: "1px 7px", borderRadius: 3, fontFamily: "monospace",
+                }}>
+                  Training…
+                </span>
+              )}
+            </div>
+
+            {/* SVG chart — fixed viewBox 800×200, scales with container */}
+            <div style={{ height: 160, position: "relative", marginBottom: 4 }}>
+              <svg
+                viewBox="0 0 800 200"
+                preserveAspectRatio="none"
+                width="100%"
+                height="100%"
+                style={{ position: "absolute", inset: 0 }}
+              >
+                {/* Grid lines */}
+                {[40, 80, 120, 160].map(y => (
+                  <line key={y} x1="0" y1={y} x2="800" y2={y}
+                    stroke="var(--border)" strokeWidth="1" />
+                ))}
+                {lossHistory.length >= 2 ? (
+                  <polyline
+                    fill="none"
+                    stroke="#3B82F6"
+                    strokeWidth="3"
+                    strokeLinejoin="round"
+                    points={chartPoints}
+                    vectorEffect="non-scaling-stroke"
+                  />
+                ) : null}
+                {lossHistory.length < 2 && (
+                  <text x="400" y="100" textAnchor="middle" fill="var(--text-muted)"
+                    fontSize="14" fontFamily="monospace">
+                    {run.status === "idle" ? "Not started" : "Waiting for first epoch…"}
+                  </text>
+                )}
+                {lossHistory.length >= 2 && run.status === "training" && (() => {
+                  const last = lossHistory[lossHistory.length - 1];
+                  const maxE = last.epoch;
+                  const minL = Math.min(...lossHistory.map(d => d.loss));
+                  const maxL = Math.max(...lossHistory.map(d => d.loss));
+                  const rangeL = maxL - minL || 1;
+                  const cx = (last.epoch / maxE) * 800;
+                  const cy = 200 - ((last.loss - minL) / rangeL) * 160 - 20;
+                  return <circle cx={cx} cy={cy} r="5" fill="#3B82F6" />;
+                })()}
+              </svg>
+              <div style={{ position: "absolute", bottom: 0, left: 0, fontSize: 9, color: "var(--text-muted)", fontFamily: "monospace" }}>Epoch 0</div>
+              <div style={{ position: "absolute", bottom: 0, right: 0, fontSize: 9, color: "var(--text-muted)", fontFamily: "monospace" }}>Epoch {run.epochs}</div>
+            </div>
+
+            {/* Progress bar + epoch counter */}
+            <div style={{ paddingTop: 12, borderTop: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 20 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                    Training Progress
+                  </span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "var(--accent)", fontFamily: "monospace" }}>{pct}%</span>
+                </div>
+                <div style={{ height: 4, borderRadius: 2, background: "var(--border)" }}>
+                  <div style={{ height: "100%", borderRadius: 2, width: `${pct}%`, background: "var(--accent)", transition: "width 0.8s ease" }} />
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 20, flexShrink: 0 }}>
+                <div>
+                  <div style={{ fontSize: 9, color: "var(--text-muted)", fontFamily: "monospace", textTransform: "uppercase" }}>Current Epoch</div>
+                  <div style={{ fontSize: 16, fontFamily: "monospace", color: "var(--text)" }}>
+                    {currentEpoch}/{totalEpochs}
+                  </div>
+                </div>
+                {progress?.loss != null && (
+                  <div>
+                    <div style={{ fontSize: 9, color: "var(--text-muted)", fontFamily: "monospace", textTransform: "uppercase" }}>Box Loss</div>
+                    <div style={{ fontSize: 16, fontFamily: "monospace", color: "#F97316" }}>
+                      {progress.loss.toFixed(4)}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Terminal log */}
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "#0e0e0e" }}>
+            <div style={{
+              padding: "6px 14px", borderBottom: "1px solid var(--border)",
+              display: "flex", alignItems: "center", gap: 8, flexShrink: 0,
+              background: "var(--surface)",
+            }}>
+              <Terminal size={12} style={{ color: "var(--text-muted)" }} />
+              <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-muted)" }}>
+                Training Logs — {run.name}
+              </span>
+            </div>
+            <div style={{ flex: 1, overflowY: "auto", padding: "12px 16px", fontFamily: "monospace", fontSize: 11, lineHeight: 1.6 }}>
+              {lines.length === 0 ? (
+                <div style={{ color: "var(--text-muted)", paddingTop: 16 }}>No log entries yet.</div>
+              ) : (
+                lines.map((line, i) => <LogLine key={i} line={line} />)
+              )}
+              <div ref={logEndRef} />
+            </div>
+          </div>
+        </div>
+
+        {/* Right column: validation metrics */}
+        <div style={{ display: "flex", flexDirection: "column", overflowY: "auto", padding: 16, gap: 12 }}>
+
+          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px" }}>
+            <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--text-muted)", marginBottom: 12 }}>
+              Real-time Validation
+            </div>
+            {[
+              { label: "mAP @ .50",     value: mAP50   },
+              { label: "mAP @ .50:.95", value: mAP5095 },
+              { label: "Precision",     value: progress?.mAP ?? null },
+              { label: "Recall",        value: null },
+            ].map(({ label, value }) => (
+              <div key={label} style={{
+                display: "flex", justifyContent: "space-between", alignItems: "center",
+                padding: "8px 10px", borderRadius: 4, background: "var(--bg)", marginBottom: 6,
+              }}>
+                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{label}</span>
+                <span style={{ fontFamily: "monospace", fontSize: 13, fontWeight: 700, color: value != null ? "var(--accent)" : "var(--text-muted)" }}>
+                  {value != null ? value.toFixed(3) : "—"}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px" }}>
+            <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--text-muted)", marginBottom: 12 }}>
+              Run Configuration
+            </div>
+            {[
+              ["Model",      run.baseModel],
+              ["Epochs",     String(run.epochs)],
+              ["Batch",      run.batchSize === -1 ? "auto" : String(run.batchSize)],
+              ["Image Size", `${run.imgsz}px`],
+              ["Device",     run.device],
+            ].map(([k, v]) => (
+              <div key={k} style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{k}</span>
+                <span style={{ fontSize: 11, fontFamily: "monospace", color: "var(--text)" }}>{v}</span>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px" }}>
+            <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--text-muted)", marginBottom: 8 }}>
+              Output
+            </div>
+            <div style={{ fontSize: 11, fontFamily: "monospace", color: "var(--text-muted)", wordBreak: "break-all", lineHeight: 1.5 }}>
+              {run.outputPath}
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LogLine({ line }: { line: string }) {
+  try {
+    const ev = JSON.parse(line);
+    if (ev.type === "start") return (
+      <div style={{ color: "var(--text-muted)", marginBottom: 2, opacity: 0.6 }}>
+        ● run started {new Date(ev.timestamp).toLocaleString()}
+      </div>
+    );
+    if (ev.type === "progress") return (
+      <div style={{ color: "var(--text)", marginBottom: 1 }}>
+        <span style={{ color: "var(--text-muted)" }}>epoch {String(ev.epoch).padStart(4)} </span>
+        {ev.loss  != null && <span>loss <span style={{ color: "#F97316" }}>{ev.loss.toFixed(4)}</span>  </span>}
+        {ev.mAP   != null && <span>mAP <span style={{ color: "#22C55E" }}>{ev.mAP.toFixed(4)}</span></span>}
+      </div>
+    );
+    if (ev.type === "done") return (
+      <div style={{ color: "#22C55E", marginTop: 4, fontWeight: 700 }}>
+        ✓ done — mAP50: {ev.mAP50.toFixed(4)}  mAP50-95: {ev.mAP50_95.toFixed(4)}
+      </div>
+    );
+    if (ev.type === "error") return (
+      <div style={{ color: "#EF4444", marginTop: 4 }}>✗ error: {ev.message}</div>
+    );
+    if (ev.type === "stderr") return (
+      <div style={{ color: "#F59E0B", marginBottom: 1, opacity: 0.8 }}>{ev.text}</div>
+    );
+  } catch {}
+  return <div style={{ color: "var(--text-muted)", marginBottom: 1 }}>{line}</div>;
 }
 
 // ── NewRunModal ────────────────────────────────────────────────────────────────

@@ -4,8 +4,16 @@ import { join, extname, basename } from "path";
 import { randomBytes } from "crypto";
 import { homedir } from "os";
 
-const IMAGE_EXTS   = new Set([".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".tiff", ".tif"]);
-const TRAIN_SCRIPT = join(import.meta.dir, "../python/train.py");
+const IMAGE_EXTS    = new Set([".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".tiff", ".tif"]);
+const PYTHON_DIR    = join(import.meta.dir, "../python");
+const TRAIN_BINARY  = join(PYTHON_DIR, process.platform === "win32" ? "train.exe" : "train");
+const TRAIN_SCRIPT  = join(PYTHON_DIR, "train.py");
+
+// Prefer the PyInstaller binary (production); fall back to the raw script (dev).
+async function getTrainCommand(): Promise<string[]> {
+	if (await Bun.file(TRAIN_BINARY).exists()) return [TRAIN_BINARY];
+	return ["python3", TRAIN_SCRIPT];
+}
 
 // Tracks active training subprocesses keyed by run ID.
 const runningProcesses = new Map<string, ReturnType<typeof Bun.spawn>>();
@@ -209,7 +217,8 @@ const rpc = defineElectrobunRPC("bun", {
 					type: "start", timestamp: new Date().toISOString(), config,
 				}) + "\n");
 
-				const proc = Bun.spawn(["python3", TRAIN_SCRIPT], {
+				const trainCmd = await getTrainCommand();
+				const proc = Bun.spawn(trainCmd, {
 					stdin:  "pipe",
 					stdout: "pipe",
 					stderr: "pipe",

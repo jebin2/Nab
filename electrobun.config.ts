@@ -18,6 +18,8 @@ export default {
 		copy: {
 			"src/mainview/index.html": "views/mainview/index.html",
 			"src/mainview/index.css":  "views/mainview/index.css",
+			// Python training script (used as fallback when no PyInstaller binary present)
+			"src/python/train.py":     "python/train.py",
 		},
 	},
 	runtime: {
