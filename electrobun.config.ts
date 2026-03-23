@@ -16,10 +16,12 @@ export default {
 			},
 		},
 		copy: {
-			"src/mainview/index.html": "views/mainview/index.html",
-			"src/mainview/index.css":  "views/mainview/index.css",
-			// Python training script (used as fallback when no PyInstaller binary present)
-			"src/python/train.py":     "python/train.py",
+			"src/mainview/index.html":              "views/mainview/index.html",
+			"src/mainview/index.css":               "views/mainview/index.css",
+			"src/python/train.py":                  "python/train.py",
+			// Standalone Python runtime bundled at build time (download-python.ts).
+			// Extracted to ~/.yolostudio/python-runtime on first training run.
+			"src/python/python-runtime.tar.gz":     "python/python-runtime.tar.gz",
 		},
 	},
 	runtime: {

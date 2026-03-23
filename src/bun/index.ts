@@ -4,15 +4,66 @@ import { join, extname, basename } from "path";
 import { randomBytes } from "crypto";
 import { homedir } from "os";
 
-const IMAGE_EXTS    = new Set([".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".tiff", ".tif"]);
-const PYTHON_DIR    = join(import.meta.dir, "../python");
-const TRAIN_BINARY  = join(PYTHON_DIR, process.platform === "win32" ? "train.exe" : "train");
-const TRAIN_SCRIPT  = join(PYTHON_DIR, "train.py");
+const IMAGE_EXTS      = new Set([".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".tiff", ".tif"]);
+const TRAIN_SCRIPT    = join(import.meta.dir, "../python/train.py");
+const RUNTIME_TARBALL = join(import.meta.dir, "../python/python-runtime.tar.gz");
 
-// Prefer the PyInstaller binary (production); fall back to the raw script (dev).
-async function getTrainCommand(): Promise<string[]> {
-	if (await Bun.file(TRAIN_BINARY).exists()) return [TRAIN_BINARY];
-	return ["python3", TRAIN_SCRIPT];
+const YOLO_DIR        = join(homedir(), ".yolostudio");
+const RUNTIME_DIR     = join(YOLO_DIR, "python-runtime");
+const VENV_DIR        = join(YOLO_DIR, "venv");
+
+// python-build-standalone extracts to python/install/...
+const IS_WIN          = process.platform === "win32";
+const RUNTIME_PYTHON  = join(RUNTIME_DIR, "python", "install", IS_WIN ? "python.exe" : "bin/python3");
+const VENV_PYTHON     = join(VENV_DIR, IS_WIN ? "Scripts/python.exe" : "bin/python");
+
+/**
+ * Returns [venvPython, trainScript].
+ *
+ * On first call:
+ *   1. Extracts the bundled Python runtime tarball → ~/.yolostudio/python-runtime/
+ *   2. Creates a venv using that Python           → ~/.yolostudio/venv/
+ *   3. pip-installs ultralytics into the venv
+ *
+ * Subsequent calls are instant (everything already exists).
+ * Setup progress is written to the run's train.log so the UI terminal shows it.
+ */
+async function getTrainCommand(logPath: string): Promise<string[]> {
+	const log = (text: string) =>
+		appendFile(logPath, JSON.stringify({ type: "stderr", text }) + "\n").catch(() => {});
+
+	// ── 1. Extract bundled Python runtime ─────────────────────────────────────
+	if (!(await Bun.file(RUNTIME_PYTHON).exists())) {
+		await log("[setup] Extracting bundled Python runtime…");
+		await mkdir(RUNTIME_DIR, { recursive: true });
+		const tar = Bun.spawn(
+			["tar", "xzf", RUNTIME_TARBALL, "-C", RUNTIME_DIR],
+			{ stdout: "pipe", stderr: "pipe" }
+		);
+		await tar.exited;
+		await log("[setup] Python runtime ready.");
+	}
+
+	// ── 2. Create virtualenv ───────────────────────────────────────────────────
+	if (!(await Bun.file(VENV_PYTHON).exists())) {
+		await log("[setup] Creating virtual environment at ~/.yolostudio/venv…");
+		const venv = Bun.spawn(
+			[RUNTIME_PYTHON, "-m", "venv", VENV_DIR],
+			{ stdout: "pipe", stderr: "pipe" }
+		);
+		await venv.exited;
+
+		// ── 3. Install ultralytics ─────────────────────────────────────────────
+		await log("[setup] Installing ultralytics (first run only — this may take a few minutes)…");
+		const pip = Bun.spawn(
+			[VENV_PYTHON, "-m", "pip", "install", "--quiet", "ultralytics"],
+			{ stdout: "pipe", stderr: "pipe" }
+		);
+		await pip.exited;
+		await log("[setup] Environment ready. Starting training…");
+	}
+
+	return [VENV_PYTHON, TRAIN_SCRIPT];
 }
 
 // Tracks active training subprocesses keyed by run ID.
@@ -217,7 +268,7 @@ const rpc = defineElectrobunRPC("bun", {
 					type: "start", timestamp: new Date().toISOString(), config,
 				}) + "\n");
 
-				const trainCmd = await getTrainCommand();
+				const trainCmd = await getTrainCommand(logPath);
 				const proc = Bun.spawn(trainCmd, {
 					stdin:  "pipe",
 					stdout: "pipe",

@@ -4,7 +4,5 @@ dist/
 .env
 .env.local
 *.log
-# PyInstaller binary (built per-platform, not committed)
-src/python/train
-src/python/train.exe
-build/pyinstaller/
+# Python runtime tarball — downloaded at build time by scripts/download-python.ts
+src/python/python-runtime.tar.gz
