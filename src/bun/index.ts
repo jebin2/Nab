@@ -1,5 +1,5 @@
 import Electrobun, { BrowserWindow, defineElectrobunRPC } from "electrobun/bun";
-import { readdir } from "fs/promises";
+import { readdir, mkdir } from "fs/promises";
 import { join, extname } from "path";
 import { randomBytes } from "crypto";
 import { homedir } from "os";
@@ -68,6 +68,22 @@ const rpc = defineElectrobunRPC("bun", {
 				});
 				const canceled = !filePaths || filePaths.length === 0 || filePaths[0] === "";
 				return { canceled, paths: canceled ? [] : filePaths };
+			},
+
+			loadStudio: async () => {
+				const studioFile = join(homedir(), ".yolostudio", "studio.json");
+				try {
+					const file = Bun.file(studioFile);
+					if (await file.exists()) return JSON.parse(await file.text());
+				} catch {}
+				return { assets: [], runs: [] };
+			},
+
+			saveStudio: async ({ assets, runs }: { assets: unknown[]; runs: unknown[] }) => {
+				const studioDir = join(homedir(), ".yolostudio");
+				await mkdir(studioDir, { recursive: true });
+				await Bun.write(join(studioDir, "studio.json"), JSON.stringify({ assets, runs }, null, 2));
+				return {};
 			},
 
 			openFolderDialog: async () => {

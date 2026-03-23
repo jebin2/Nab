@@ -1,15 +1,16 @@
 import { useState } from "react";
-import { Plus, MoreHorizontal, FolderOpen, Tag, Image } from "lucide-react";
+import { Plus, Trash2, FolderOpen, Tag, Image } from "lucide-react";
 import { type Asset } from "../lib/types";
-import { MOCK_ASSETS, CLASS_COLORS } from "../lib/constants";
+import { CLASS_COLORS } from "../lib/constants";
 import { getRPC } from "../lib/rpc";
 
 interface Props {
+  assets: Asset[];
+  onAssetsChange: (assets: Asset[]) => void;
   onOpenAsset: (asset: Asset) => void;
 }
 
-export default function Assets({ onOpenAsset }: Props) {
-  const [assets, setAssets]     = useState<Asset[]>(MOCK_ASSETS);
+export default function Assets({ assets, onAssetsChange, onOpenAsset }: Props) {
   const [showModal, setShowModal] = useState(false);
 
   function handleCreate(name: string, storagePath: string) {
@@ -23,7 +24,7 @@ export default function Assets({ onOpenAsset }: Props) {
       updatedAt:      "just now",
       thumbnailColor: THUMBNAIL_COLORS[assets.length % THUMBNAIL_COLORS.length],
     };
-    setAssets(prev => [...prev, asset]);
+    onAssetsChange([...assets, asset]);
     setShowModal(false);
     onOpenAsset(asset);
   }
@@ -61,7 +62,12 @@ export default function Assets({ onOpenAsset }: Props) {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
 
           {assets.map(asset => (
-            <AssetCard key={asset.id} asset={asset} onClick={() => onOpenAsset(asset)} />
+            <AssetCard
+              key={asset.id}
+              asset={asset}
+              onClick={() => onOpenAsset(asset)}
+              onDelete={() => onAssetsChange(assets.filter(a => a.id !== asset.id))}
+            />
           ))}
 
           <button
@@ -97,7 +103,7 @@ export default function Assets({ onOpenAsset }: Props) {
 
 // ── AssetCard ──────────────────────────────────────────────────────────────────
 
-function AssetCard({ asset, onClick }: { asset: Asset; onClick: () => void }) {
+function AssetCard({ asset, onClick, onDelete }: { asset: Asset; onClick: () => void; onDelete: () => void }) {
   const pct = asset.imageCount > 0 ? Math.round(asset.annotatedCount / asset.imageCount * 100) : 0;
 
   return (
@@ -133,15 +139,19 @@ function AssetCard({ asset, onClick }: { asset: Asset; onClick: () => void }) {
         </div>
 
         <button
-          onClick={e => e.stopPropagation()}
+          onClick={e => { e.stopPropagation(); onDelete(); }}
+          title="Delete asset"
           style={{
             position: "absolute", top: 8, right: 8,
             background: "rgba(0,0,0,0.4)", border: "none", borderRadius: 5,
-            padding: "4px 5px", cursor: "pointer", color: "rgba(255,255,255,0.7)",
+            padding: "4px 5px", cursor: "pointer", color: "rgba(255,255,255,0.6)",
             display: "flex", alignItems: "center",
+            transition: "color 0.12s, background 0.12s",
           }}
+          onMouseEnter={e => { const el = e.currentTarget as HTMLButtonElement; el.style.color = "#EF4444"; el.style.background = "rgba(0,0,0,0.65)"; }}
+          onMouseLeave={e => { const el = e.currentTarget as HTMLButtonElement; el.style.color = "rgba(255,255,255,0.6)"; el.style.background = "rgba(0,0,0,0.4)"; }}
         >
-          <MoreHorizontal size={14} />
+          <Trash2 size={13} />
         </button>
       </div>
 

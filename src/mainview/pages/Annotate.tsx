@@ -44,10 +44,11 @@ const TOOLBAR: ToolbarEntry[] = [
 
 interface Props {
   asset: Asset;
+  onAssetUpdate: (updated: Asset) => void;
   onBack: () => void;
 }
 
-export default function Annotate({ asset, onBack }: Props) {
+export default function Annotate({ asset, onAssetUpdate, onBack }: Props) {
   const [images, setImages]                     = useState<ImageEntry[]>([]);
   const [currentIndex, setCurrentIndex]         = useState(0);
   const [classes, setClasses]                   = useState<ClassDef[]>([]);
@@ -197,7 +198,15 @@ export default function Annotate({ asset, onBack }: Props) {
         background: "var(--surface)",
       }}>
         <button
-          onClick={onBack}
+          onClick={() => {
+            onAssetUpdate({
+              ...asset,
+              imageCount:     images.length,
+              annotatedCount: images.filter(i => i.annotations.length > 0).length,
+              classes:        classes.map(c => c.name),
+              updatedAt:      "just now",
+            });
+          }}
           style={{
             display: "flex", alignItems: "center", gap: 4,
             background: "none", border: "none", cursor: "pointer",

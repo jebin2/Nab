@@ -1,15 +1,19 @@
 import { useState } from "react";
 import { Plus, MoreHorizontal, FolderOpen, Cpu } from "lucide-react";
 import { type TrainingRun, type Asset } from "../lib/types";
-import { MOCK_RUNS, MOCK_ASSETS, RUN_STATUS_LABELS, RUN_STATUS_COLORS, BASE_MODELS, CLASS_COLORS } from "../lib/constants";
+import { MOCK_ASSETS, RUN_STATUS_LABELS, RUN_STATUS_COLORS, BASE_MODELS, CLASS_COLORS } from "../lib/constants";
 import { getRPC } from "../lib/rpc";
 
-export default function Train() {
-  const [runs, setRuns]       = useState<TrainingRun[]>(MOCK_RUNS);
+interface Props {
+  runs: TrainingRun[];
+  onRunsChange: (runs: TrainingRun[]) => void;
+}
+
+export default function Train({ runs, onRunsChange }: Props) {
   const [showModal, setShowModal] = useState(false);
 
   function handleCreate(run: TrainingRun) {
-    setRuns(prev => [...prev, run]);
+    onRunsChange([...runs, run]);
     setShowModal(false);
   }
 

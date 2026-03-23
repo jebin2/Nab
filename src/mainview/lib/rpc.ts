@@ -1,12 +1,24 @@
 // Singleton RPC channel between the renderer and the Bun main process.
 // Call initRPC() once at startup before rendering the app.
 
+import { type Asset, type TrainingRun } from "./types";
+
+type StudioData = { assets: Asset[]; runs: TrainingRun[] };
+
 type RPCSchema = {
   bun: {
     requests: {
       getBridgeConfig: {
         params:   Record<string, never>;
         response: { port: number; token: string };
+      };
+      loadStudio: {
+        params:   Record<string, never>;
+        response: StudioData;
+      };
+      saveStudio: {
+        params:   StudioData;
+        response: Record<string, never>;
       };
       openImagesDialog: {
         params:   Record<string, never>;

@@ -1,18 +1,20 @@
 import { Layers, Cpu, Image, Tag, ArrowRight } from "lucide-react";
 import { type NavPage, type Asset, type TrainingRun } from "../lib/types";
-import { MOCK_ASSETS, MOCK_RUNS, RUN_STATUS_COLORS, RUN_STATUS_LABELS, CLASS_COLORS } from "../lib/constants";
+import { RUN_STATUS_COLORS, RUN_STATUS_LABELS, CLASS_COLORS } from "../lib/constants";
 
 interface Props {
+  assets: Asset[];
+  runs: TrainingRun[];
   onNavigate: (page: NavPage) => void;
 }
 
-export default function Overview({ onNavigate }: Props) {
-  const totalImages     = MOCK_ASSETS.reduce((s, a) => s + a.imageCount, 0);
-  const totalAnnotated  = MOCK_ASSETS.reduce((s, a) => s + a.annotatedCount, 0);
-  const totalClasses    = new Set(MOCK_ASSETS.flatMap(a => a.classes)).size;
+export default function Overview({ assets, runs, onNavigate }: Props) {
+  const totalImages = assets.reduce((s, a) => s + a.imageCount, 0);
+  const totalAnnotated = assets.reduce((s, a) => s + a.annotatedCount, 0);
+  const totalClasses = new Set(assets.flatMap(a => a.classes)).size;
 
-  const recentAssets = [...MOCK_ASSETS].slice(0, 3);
-  const recentRuns   = [...MOCK_RUNS].slice(0, 3);
+  const recentAssets = [...assets].slice(0, 3);
+  const recentRuns = [...runs].slice(0, 3);
 
   return (
     <div style={{ flex: 1, overflowY: "auto", background: "var(--bg)", padding: "28px 32px" }}>
@@ -26,10 +28,10 @@ export default function Overview({ onNavigate }: Props) {
 
       {/* Stat cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 36 }}>
-        <StatCard icon={Layers} label="Assets"           value={MOCK_ASSETS.length} />
-        <StatCard icon={Cpu}    label="Training Runs"    value={MOCK_RUNS.length} />
-        <StatCard icon={Image}  label="Images"           value={totalImages} />
-        <StatCard icon={Tag}    label="Unique Classes"   value={totalClasses} />
+        <StatCard icon={Layers} label="Assets" value={assets.length} />
+        <StatCard icon={Cpu} label="Training Runs" value={runs.length} />
+        <StatCard icon={Image} label="Images" value={totalImages} />
+        <StatCard icon={Tag} label="Unique Classes" value={totalClasses} />
       </div>
 
       {/* Two-column recents */}
@@ -51,14 +53,14 @@ export default function Overview({ onNavigate }: Props) {
       <div style={{ marginTop: 24, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, padding: "18px 20px" }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", marginBottom: 14 }}>Annotation Progress</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {MOCK_ASSETS.map(a => (
+          {assets.map(a => (
             <ProgressRow key={a.id} label={a.name} value={a.annotatedCount} total={a.imageCount} />
           ))}
         </div>
         <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between" }}>
           <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Total</span>
           <span style={{ fontSize: 12, color: "var(--text)", fontFamily: "monospace" }}>
-            {totalAnnotated} / {totalImages} ({Math.round(totalAnnotated / totalImages * 100)}%)
+            {totalAnnotated} / {totalImages} ({totalImages > 0 ? Math.round(totalAnnotated / totalImages * 100) : 0}%)
           </span>
         </div>
       </div>
