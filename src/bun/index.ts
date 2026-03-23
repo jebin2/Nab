@@ -38,7 +38,8 @@ async function collectImagePaths(dir: string): Promise<string[]> {
 	await Promise.all(entries.map(async entry => {
 		const fullPath = join(dir, entry.name);
 		if (entry.isDirectory()) {
-			paths.push(...await collectImagePaths(fullPath));
+			const sub = await collectImagePaths(fullPath);
+			for (const p of sub) paths.push(p);
 		} else if (IMAGE_EXTS.has(extname(entry.name).toLowerCase())) {
 			paths.push(fullPath);
 		}

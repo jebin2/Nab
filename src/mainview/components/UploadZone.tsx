@@ -1,36 +1,16 @@
 import { useState } from "react";
 import { ImagePlus, FolderOpen, Loader } from "lucide-react";
 import { type ImageEntry } from "../lib/annotationTypes";
-import { getRPC } from "../lib/rpc";
-import { pathsToImageEntries, filesToImageEntries } from "../lib/imageLoader";
+import { filesToImageEntries } from "../lib/imageLoader";
+import { useImagePicker } from "../lib/useImagePicker";
 
 interface Props {
   onLoad: (entries: ImageEntry[]) => void;
 }
 
 export default function UploadZone({ onLoad }: Props) {
-  const [loading,  setLoading]  = useState(false);
   const [dragging, setDragging] = useState(false);
-
-  async function openImagesDialog() {
-    setLoading(true);
-    try {
-      const { canceled, paths } = await getRPC().request.openImagesDialog({});
-      if (!canceled && paths.length > 0) onLoad(pathsToImageEntries(paths));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function openFolderDialog() {
-    setLoading(true);
-    try {
-      const { canceled, paths } = await getRPC().request.openFolderDialog({});
-      if (!canceled && paths.length > 0) onLoad(pathsToImageEntries(paths));
-    } finally {
-      setLoading(false);
-    }
-  }
+  const { openImages, openFolder, loading } = useImagePicker(onLoad);
 
   function onDragOver(e: React.DragEvent) {
     e.preventDefault();
@@ -44,13 +24,8 @@ export default function UploadZone({ onLoad }: Props) {
   async function onDrop(e: React.DragEvent) {
     e.preventDefault();
     setDragging(false);
-    setLoading(true);
-    try {
-      const entries = await filesToImageEntries(Array.from(e.dataTransfer.files));
-      if (entries.length > 0) onLoad(entries);
-    } finally {
-      setLoading(false);
-    }
+    const entries = await filesToImageEntries(Array.from(e.dataTransfer.files));
+    if (entries.length > 0) onLoad(entries);
   }
 
   return (
@@ -71,13 +46,11 @@ export default function UploadZone({ onLoad }: Props) {
         <LoadingState />
       ) : (
         <>
-          {/* Icon cluster */}
           <div style={{ display: "flex", gap: 12, opacity: dragging ? 1 : 0.5 }}>
             <IconTile Icon={ImagePlus} />
             <IconTile Icon={FolderOpen} />
           </div>
 
-          {/* Label */}
           <div style={{ textAlign: "center" }}>
             <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)", marginBottom: 6 }}>
               {dragging ? "Drop image files here" : "Add images to start annotating"}
@@ -87,11 +60,10 @@ export default function UploadZone({ onLoad }: Props) {
             </div>
           </div>
 
-          {/* Buttons */}
           {!dragging && (
             <div style={{ display: "flex", gap: 10 }}>
-              <UploadButton Icon={ImagePlus} label="Select Images" onClick={openImagesDialog} />
-              <UploadButton Icon={FolderOpen} label="Select Folder" onClick={openFolderDialog} />
+              <UploadButton Icon={ImagePlus} label="Select Images" onClick={openImages} />
+              <UploadButton Icon={FolderOpen} label="Select Folder" onClick={openFolder} />
             </div>
           )}
         </>

@@ -1,40 +1,19 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { ImagePlus, FolderOpen } from "lucide-react";
 import { type ImageEntry } from "../lib/annotationTypes";
-import { getRPC } from "../lib/rpc";
-import { pathsToImageEntries, loadImageSrc } from "../lib/imageLoader";
+import { loadImageSrc } from "../lib/imageLoader";
+import { useImagePicker } from "../lib/useImagePicker";
 
 interface Props {
   images: ImageEntry[];
   currentIndex: number;
   onSelect: (index: number) => void;
   onAddImages: (entries: ImageEntry[]) => void;
-  // Called when a lazy image src has been resolved so the parent can cache it
   onSrcResolved: (id: string, src: string) => void;
 }
 
 export default function ImageList({ images, currentIndex, onSelect, onAddImages, onSrcResolved }: Props) {
-  const [adding, setAdding] = useState(false);
-
-  async function addFromImages() {
-    setAdding(true);
-    try {
-      const { canceled, paths } = await getRPC().request.openImagesDialog({});
-      if (!canceled && paths.length > 0) onAddImages(pathsToImageEntries(paths));
-    } finally {
-      setAdding(false);
-    }
-  }
-
-  async function addFromFolder() {
-    setAdding(true);
-    try {
-      const { canceled, paths } = await getRPC().request.openFolderDialog({});
-      if (!canceled && paths.length > 0) onAddImages(pathsToImageEntries(paths));
-    } finally {
-      setAdding(false);
-    }
-  }
+  const { openImages, openFolder, loading: adding } = useImagePicker(onAddImages);
 
   return (
     <div style={{
@@ -55,8 +34,8 @@ export default function ImageList({ images, currentIndex, onSelect, onAddImages,
       }}>
         <span style={{ flex: 1 }}>Dataset Images</span>
         <span style={{ fontWeight: 400, marginRight: 6 }}>{images.length}</span>
-        <HeaderIconButton Icon={ImagePlus} title="Add images"  disabled={adding} onClick={addFromImages} />
-        <HeaderIconButton Icon={FolderOpen} title="Add folder" disabled={adding} onClick={addFromFolder} />
+        <HeaderIconButton Icon={ImagePlus} title="Add images"  disabled={adding} onClick={openImages} />
+        <HeaderIconButton Icon={FolderOpen} title="Add folder" disabled={adding} onClick={openFolder} />
       </div>
 
       {/* List */}
@@ -111,23 +90,35 @@ export default function ImageList({ images, currentIndex, onSelect, onAddImages,
   );
 }
 
-// Loads the image src lazily when this component mounts.
+// Loads the image src lazily on mount via the binary bridge.
 // Once resolved, propagates the blob URL up so the parent can persist it.
+// Uses a stable callback ref so the effect deps stay minimal and correct.
 function LazyThumbnail({ entry, onSrcResolved }: {
   entry: ImageEntry;
   onSrcResolved: (id: string, src: string) => void;
 }) {
   const [src, setSrc] = useState(entry.src);
 
+  // Keep a stable ref to the callback to avoid re-running the fetch when the
+  // parent re-renders and passes a new function reference.
+  const onSrcResolvedRef = useRef(onSrcResolved);
+  onSrcResolvedRef.current = onSrcResolved;
+
   useEffect(() => {
     if (entry.src) { setSrc(entry.src); return; }
     if (!entry.filePath) return;
+
+    let revoked = false;
     loadImageSrc(entry)
       .then(resolved => {
+        if (revoked) { URL.revokeObjectURL(resolved); return; }
         setSrc(resolved);
-        onSrcResolved(entry.id, resolved);
+        onSrcResolvedRef.current(entry.id, resolved);
       })
-      .catch(() => {}); // broken image shown on failure
+      .catch(() => {});
+
+    // If the entry is removed before loading completes, revoke immediately.
+    return () => { revoked = true; };
   }, [entry.id, entry.filePath, entry.src]);
 
   if (!src) {

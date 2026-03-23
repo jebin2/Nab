@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import {
   ChevronLeft, ChevronRight, SkipForward,
   Maximize2, Hand, Square, Lasso, ZoomIn, ZoomOut, Trash2,
@@ -9,7 +9,6 @@ import ClassPanel from "../components/ClassPanel";
 import UploadZone from "../components/UploadZone";
 import { type BBox, type ClassDef, type AnnotateTool, type ImageEntry } from "../lib/annotationTypes";
 import { loadImageSrc } from "../lib/imageLoader";
-import { MOCK_CLASSES } from "../lib/mockImages";
 
 // ── toolbar types ─────────────────────────────────────────────────────────────
 
@@ -45,7 +44,7 @@ const TOOLBAR: ToolbarEntry[] = [
 export default function Annotate() {
   const [images, setImages]                     = useState<ImageEntry[]>([]);
   const [currentIndex, setCurrentIndex]         = useState(0);
-  const [classes, setClasses]                   = useState<ClassDef[]>(MOCK_CLASSES);
+  const [classes, setClasses]                   = useState<ClassDef[]>([]);
   const [activeClassIndex, setActiveClassIndex] = useState(0);
   const [tool, setTool]                         = useState<AnnotateTool>("hand");
   const [selectedId, setSelectedId]             = useState<string | null>(null);
@@ -55,20 +54,52 @@ export default function Annotate() {
   const canvasRef    = useRef<CanvasHandle>(null);
   const currentImage = images[currentIndex];
 
+  // Ref used in the unmount cleanup to revoke all outstanding blob URLs.
+  const imagesRef = useRef(images);
+  imagesRef.current = images;
+
+  // Revoke all blob URLs when the page unmounts to prevent memory leaks.
+  useEffect(() => {
+    return () => {
+      imagesRef.current.forEach(img => {
+        if (img.src?.startsWith("blob:")) URL.revokeObjectURL(img.src);
+      });
+    };
+  }, []);
+
+  // ── image loading ─────────────────────────────────────────────────────────
+
   function addImages(entries: ImageEntry[]) {
-    setImages(prev => {
-      if (prev.length === 0) setCurrentIndex(0);
-      return [...prev, ...entries];
+    // Pure updater — no side effects inside. currentIndex starts at 0 so the
+    // first image is automatically shown when images go from [] to [n items].
+    setImages(prev => [...prev, ...entries]);
+  }
+
+  // Batch blob-URL updates from LazyThumbnail into a single setImages call.
+  // Without batching, 1000 thumbnails loading simultaneously would trigger
+  // 1000 separate setImages → 1000 O(n) maps. With a rAF flush we coalesce
+  // all updates that arrive in the same frame into one map pass.
+  const pendingSrcUpdates = useRef<Map<string, string>>(new Map());
+  const srcFlushScheduled = useRef(false);
+
+  function onSrcResolved(id: string, src: string) {
+    pendingSrcUpdates.current.set(id, src);
+    if (srcFlushScheduled.current) return;
+    srcFlushScheduled.current = true;
+    requestAnimationFrame(() => {
+      srcFlushScheduled.current = false;
+      const updates = new Map(pendingSrcUpdates.current);
+      pendingSrcUpdates.current.clear();
+      if (updates.size === 0) return;
+      setImages(prev => prev.map(img => {
+        const newSrc = updates.get(img.id);
+        return newSrc ? { ...img, src: newSrc } : img;
+      }));
     });
   }
 
-  // Persist blob URL resolved by LazyThumbnail back into the images array.
-  function onSrcResolved(id: string, src: string) {
-    setImages(prev => prev.map(img => img.id === id ? { ...img, src } : img));
-  }
-
-  // When navigating to an image that hasn't loaded its src yet, fetch it now
-  // so AnnotationCanvas always receives a valid imageSrc.
+  // When navigating to an image whose src hasn't loaded yet (not yet visible
+  // in the thumbnail list), fetch it now so the canvas doesn't show blank.
   useEffect(() => {
     const img = images[currentIndex];
     if (!img || img.src || !img.filePath) return;
@@ -77,9 +108,13 @@ export default function Annotate() {
     }).catch(() => {});
   }, [currentIndex, images[currentIndex]?.src]);
 
+  // ── annotations ───────────────────────────────────────────────────────────
+
   function updateAnnotations(anns: BBox[]) {
     setImages(prev => prev.map((img, i) => i === currentIndex ? { ...img, annotations: anns } : img));
   }
+
+  // ── navigation ────────────────────────────────────────────────────────────
 
   function navigate(delta: number) {
     setSelectedId(null);
@@ -102,7 +137,13 @@ export default function Annotate() {
     return () => window.removeEventListener("keydown", onKey);
   }, [images.length]);
 
-  const annotatedCount = images.filter(i => i.annotations.length > 0).length;
+  // ── derived state ─────────────────────────────────────────────────────────
+
+  // useMemo so this O(n) filter doesn't re-run on every render (zoom, coords, etc.)
+  const annotatedCount = useMemo(
+    () => images.filter(i => i.annotations.length > 0).length,
+    [images],
+  );
 
   // ── toolbar handlers ──────────────────────────────────────────────────────
 
@@ -136,6 +177,8 @@ export default function Annotate() {
     }
     return false;
   }
+
+  // ── render ────────────────────────────────────────────────────────────────
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -216,7 +259,6 @@ export default function Annotate() {
                 display: "flex", alignItems: "center",
                 justifyContent: "center", gap: 2, padding: "0 12px",
               }}>
-                {/* zoom + coords on the left */}
                 <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "monospace", marginRight: "auto" }}>
                   {zoom}% · {coords.x}, {coords.y}
                 </span>
@@ -254,7 +296,6 @@ export default function Annotate() {
                   );
                 })}
 
-                {/* image name on the right */}
                 <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: "auto", fontFamily: "monospace" }}>
                   {currentImage.filename}
                 </span>
