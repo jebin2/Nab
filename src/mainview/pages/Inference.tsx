@@ -190,7 +190,7 @@ export default function Inference({ runs }: Props) {
                 </span>
                 <span style={{
                   padding: "2px 8px", borderRadius: 4, fontSize: 10, fontWeight: 700,
-                  background: "var(--accent)22", border: "1px solid var(--accent)55",
+                  background: "#3B82F622", border: "1px solid #3B82F655",
                   color: "var(--accent)", letterSpacing: "0.06em", textTransform: "uppercase",
                 }}>
                   {selectedRun.name}
@@ -310,33 +310,22 @@ export default function Inference({ runs }: Props) {
                 No trained models yet.<br />Complete a training run first.
               </span>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {doneRuns.map(run => {
-                  const active = run.id === selectedRunId;
-                  return (
-                    <button
-                      key={run.id}
-                      onClick={() => handleSelectRun(run.id)}
-                      style={{
-                        display: "flex", alignItems: "center", justifyContent: "space-between",
-                        padding: "8px 10px", borderRadius: 6, border: "none", textAlign: "left",
-                        background: active ? "var(--accent)18" : "var(--bg)",
-                        outline: active ? "1px solid var(--accent)55" : "1px solid var(--border)",
-                        cursor: "pointer", fontFamily: "inherit",
-                      }}
-                    >
-                      <span style={{ fontSize: 12, fontFamily: "monospace", color: active ? "var(--accent)" : "var(--text)", fontWeight: active ? 600 : 400 }}>
-                        {run.name}
-                      </span>
-                      {run.mAP != null && (
-                        <span style={{ fontSize: 10, fontFamily: "monospace", color: "var(--text-muted)" }}>
-                          {run.mAP.toFixed(2)}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
+              <select
+                value={selectedRunId ?? ""}
+                onChange={e => handleSelectRun(e.target.value)}
+                style={{
+                  width: "100%", padding: "7px 10px", borderRadius: 6,
+                  border: "1px solid var(--border)", background: "var(--bg)",
+                  color: "var(--text)", fontSize: 12, fontFamily: "monospace",
+                  cursor: "pointer", outline: "none",
+                }}
+              >
+                {doneRuns.map(run => (
+                  <option key={run.id} value={run.id}>
+                    {run.name}{run.mAP != null ? `  (mAP ${run.mAP.toFixed(2)})` : ""}
+                  </option>
+                ))}
+              </select>
             )}
           </Panel>
 
