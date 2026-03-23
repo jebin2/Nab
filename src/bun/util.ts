@@ -1,5 +1,8 @@
-import { appendFile, mkdir } from "fs/promises";
+import { appendFile, mkdir, writeFile } from "fs/promises";
 import { join } from "path";
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
 import { homedir } from "os";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -60,6 +63,59 @@ export function checkpointPath(outputPath: string): string {
 	return join(outputPath, "weights", "weights", "last.pt");
 }
 
+// ── downloadPythonRuntime ─────────────────────────────────────────────────────
+// Downloads python-build-standalone for the current OS/arch (same source as
+// download-python.ts used at app build time). Used by the standalone CLI on
+// first run when no bundled tarball is present.
+
+const PYTHON_PLATFORM_MAP: Record<string, string> = {
+	"linux-x64":    "x86_64-unknown-linux-gnu-install_only_stripped.tar.gz",
+	"linux-arm64":  "aarch64-unknown-linux-gnu-install_only_stripped.tar.gz",
+	"darwin-x64":   "x86_64-apple-darwin-install_only_stripped.tar.gz",
+	"darwin-arm64": "aarch64-apple-darwin-install_only_stripped.tar.gz",
+	"win32-x64":    "x86_64-pc-windows-msvc-install_only_stripped.tar.gz",
+};
+
+export async function downloadPythonRuntime(
+	destPath: string,
+	log: (text: string) => Promise<void>,
+): Promise<void> {
+	const platformKey = `${process.platform}-${process.arch}`;
+	const suffix = PYTHON_PLATFORM_MAP[platformKey];
+	if (!suffix) throw new Error(`Unsupported platform for Python download: ${platformKey}`);
+
+	await log(`[setup] Fetching Python runtime info for ${platformKey}…`);
+	const apiRes = await fetch(
+		"https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest",
+		{ headers: { "User-Agent": "YOLOStudio" } },
+	);
+	if (!apiRes.ok) throw new Error(`GitHub API error: ${apiRes.status}`);
+
+	const release = await apiRes.json() as {
+		assets: Array<{ name: string; browser_download_url: string }>;
+	};
+	const asset = release.assets.find(a => a.name.startsWith("cpython-3.12") && a.name.endsWith(suffix));
+	if (!asset) throw new Error(`No Python 3.12 asset found for ${platformKey}`);
+
+	await log(`[setup] Downloading Python runtime: ${asset.name}…`);
+	const dlRes = await fetch(asset.browser_download_url);
+	if (!dlRes.ok || !dlRes.body) throw new Error(`Download failed: ${dlRes.status}`);
+
+	await mkdir(YOLO_DIR, { recursive: true });
+	const chunks: Uint8Array[] = [];
+	const reader = dlRes.body.getReader();
+	while (true) {
+		const { done, value } = await reader.read();
+		if (done) break;
+		chunks.push(value);
+	}
+	const buf = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0));
+	let offset = 0;
+	for (const c of chunks) { buf.set(c, offset); offset += c.length; }
+	await writeFile(destPath, buf);
+	await log("[setup] Python runtime downloaded.");
+}
+
 // ── prepareEnvironment ────────────────────────────────────────────────────────
 // Ensures the bundled Python runtime + ultralytics venv are ready.
 // Returns VENV_PYTHON so the caller can spawn Python directly.
@@ -91,9 +147,15 @@ export async function prepareEnvironment(logPath: string, runId: string): Promis
 	}
 
 	if (!(await Bun.file(RUNTIME_PYTHON).exists())) {
-		await log("[setup] Extracting bundled Python runtime…");
+		// Desktop app: use bundled tarball. Standalone CLI: download for current OS.
+		let tarball = RUNTIME_TARBALL;
+		if (!(await Bun.file(tarball).exists())) {
+			tarball = join(YOLO_DIR, "python-runtime.tar.gz");
+			await downloadPythonRuntime(tarball, log);
+		}
+		await log("[setup] Extracting Python runtime…");
 		await mkdir(RUNTIME_DIR, { recursive: true });
-		await run(["tar", "xzf", RUNTIME_TARBALL, "-C", RUNTIME_DIR], "tar extract");
+		await run(["tar", "xzf", tarball, "-C", RUNTIME_DIR], "tar extract");
 		await log("[setup] Python runtime ready.");
 	}
 
