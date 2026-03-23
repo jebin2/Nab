@@ -32,34 +32,49 @@ async function getTrainCommand(logPath: string): Promise<string[]> {
 	const log = (text: string) =>
 		appendFile(logPath, JSON.stringify({ type: "stderr", text }) + "\n").catch(() => {});
 
+	// Runs a command and streams its stderr lines to the log file.
+	async function run(cmd: string[], label: string): Promise<void> {
+		const proc = Bun.spawn(cmd, { stdout: "pipe", stderr: "pipe" });
+
+		// Stream stderr lines to train.log so the terminal panel shows progress.
+		(async () => {
+			const decoder = new TextDecoder();
+			let buf = "";
+			for await (const chunk of proc.stderr) {
+				buf += decoder.decode(chunk, { stream: true });
+				const lines = buf.split("\n");
+				buf = lines.pop() ?? "";
+				for (const line of lines) {
+					if (line.trim()) await log(line);
+				}
+			}
+			if (buf.trim()) await log(buf);
+		})().catch(() => {});
+
+		const code = await proc.exited;
+		if (code !== 0) {
+			await log(`[setup] ✗ ${label} failed (exit ${code})`);
+			throw new Error(`${label} failed with exit code ${code}`);
+		}
+	}
+
 	// ── 1. Extract bundled Python runtime ─────────────────────────────────────
 	if (!(await Bun.file(RUNTIME_PYTHON).exists())) {
 		await log("[setup] Extracting bundled Python runtime…");
 		await mkdir(RUNTIME_DIR, { recursive: true });
-		const tar = Bun.spawn(
-			["tar", "xzf", RUNTIME_TARBALL, "-C", RUNTIME_DIR],
-			{ stdout: "pipe", stderr: "pipe" }
-		);
-		await tar.exited;
+		await run(["tar", "xzf", RUNTIME_TARBALL, "-C", RUNTIME_DIR], "tar extract");
 		await log("[setup] Python runtime ready.");
 	}
 
 	// ── 2. Create virtualenv ───────────────────────────────────────────────────
 	if (!(await Bun.file(VENV_PYTHON).exists())) {
 		await log("[setup] Creating virtual environment at ~/.yolostudio/venv…");
-		const venv = Bun.spawn(
-			[RUNTIME_PYTHON, "-m", "venv", VENV_DIR],
-			{ stdout: "pipe", stderr: "pipe" }
-		);
-		await venv.exited;
+		await run([RUNTIME_PYTHON, "-m", "venv", VENV_DIR], "venv create");
+		await log("[setup] Virtual environment created.");
 
 		// ── 3. Install ultralytics ─────────────────────────────────────────────
-		await log("[setup] Installing ultralytics (first run only — this may take a few minutes)…");
-		const pip = Bun.spawn(
-			[VENV_PYTHON, "-m", "pip", "install", "--quiet", "ultralytics"],
-			{ stdout: "pipe", stderr: "pipe" }
-		);
-		await pip.exited;
+		await log("[setup] Installing ultralytics (first run only — may take a few minutes)…");
+		await run([VENV_PYTHON, "-m", "pip", "install", "ultralytics"], "pip install");
 		await log("[setup] Environment ready. Starting training…");
 	}
 

@@ -407,6 +407,8 @@ function RunDetailView({ run, progress, onClose, onStart, onStop }: {
   const [lines, setLines] = useState<string[]>([]);
   const logEndRef = useRef<HTMLDivElement>(null);
 
+  // Poll the log whenever the detail view is open — not just while "training",
+  // because setup messages (venv, pip install) are written before status flips.
   useEffect(() => {
     let active = true;
     async function load() {
@@ -416,10 +418,9 @@ function RunDetailView({ run, progress, onClose, onStart, onStop }: {
       } catch {}
     }
     load();
-    if (run.status !== "training") return;
     const id = setInterval(load, 1000);
     return () => { active = false; clearInterval(id); };
-  }, [run.id, run.status, run.outputPath]);
+  }, [run.id, run.outputPath]);
 
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });
