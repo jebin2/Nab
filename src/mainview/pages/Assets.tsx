@@ -33,28 +33,19 @@ export default function Assets({ assets, onAssetsChange, onOpenAsset }: Props) {
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg)" }}>
 
       {/* Header */}
-      <div style={{ padding: "24px 28px 20px", borderBottom: "1px solid var(--border)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
-          <div>
-            <h1 style={{ fontSize: 22, fontWeight: 700, color: "var(--text)", letterSpacing: "-0.4px", marginBottom: 3 }}>
-              Assets
-            </h1>
-            <p style={{ fontSize: 13, color: "var(--text-muted)" }}>
-              Reusable annotated datasets for training.
-            </p>
-          </div>
-          <button
-            onClick={() => setShowModal(true)}
-            style={{
-              display: "flex", alignItems: "center", gap: 7,
-              padding: "8px 14px", borderRadius: 7, border: "none",
-              background: "var(--accent)", color: "#fff",
-              fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit",
-            }}
-          >
-            <Plus size={14} /> New Asset
-          </button>
-        </div>
+      <div style={{ height: 56, padding: "0 28px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+        <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", letterSpacing: "-0.3px" }}>Assets</span>
+        <button
+          onClick={() => setShowModal(true)}
+          style={{
+            display: "flex", alignItems: "center", gap: 7,
+            padding: "8px 14px", borderRadius: 7, border: "none",
+            background: "var(--accent)", color: "#fff",
+            fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit",
+          }}
+        >
+          <Plus size={14} /> New Asset
+        </button>
       </div>
 
       {/* Grid */}

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { Plus, FolderOpen, Cpu, Play, Pause, Square, Trash2, ChevronLeft, Terminal } from "lucide-react";
+import { Plus, FolderOpen, Cpu, Play, Pause, Square, Trash2, Terminal } from "lucide-react";
+import DetailPageHeader, { HeaderBtn } from "../components/DetailPageHeader";
 import { type TrainingRun, type Asset } from "../lib/types";
 import { RUN_STATUS_LABELS, RUN_STATUS_COLORS, BASE_MODELS, DEVICES, CLASS_COLORS } from "../lib/constants";
 import { getRPC } from "../lib/rpc";
@@ -176,28 +177,19 @@ export default function Train({ assets, runs, onRunsChange }: Props) {
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg)" }}>
 
       {/* Header */}
-      <div style={{ padding: "24px 28px 20px", borderBottom: "1px solid var(--border)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
-          <div>
-            <h1 style={{ fontSize: 22, fontWeight: 700, color: "var(--text)", letterSpacing: "-0.4px", marginBottom: 3 }}>
-              Train
-            </h1>
-            <p style={{ fontSize: 13, color: "var(--text-muted)" }}>
-              Configure and launch YOLO26 training runs from your assets.
-            </p>
-          </div>
-          <button
-            onClick={() => setShowModal(true)}
-            style={{
-              display: "flex", alignItems: "center", gap: 7,
-              padding: "8px 14px", borderRadius: 7, border: "none",
-              background: "var(--accent)", color: "#fff",
-              fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit",
-            }}
-          >
-            <Plus size={14} /> New Run
-          </button>
-        </div>
+      <div style={{ height: 56, padding: "0 28px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+        <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", letterSpacing: "-0.3px" }}>Train</span>
+        <button
+          onClick={() => setShowModal(true)}
+          style={{
+            display: "flex", alignItems: "center", gap: 7,
+            padding: "8px 14px", borderRadius: 7, border: "none",
+            background: "var(--accent)", color: "#fff",
+            fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit",
+          }}
+        >
+          <Plus size={14} /> New Run
+        </button>
       </div>
 
       {/* Grid */}
@@ -443,19 +435,6 @@ function ActionBtn({ Icon, color, title, onClick, danger }: {
   );
 }
 
-function TopBarBtn({ onClick, bg, children }: {
-  onClick: () => void; bg: string; children: React.ReactNode;
-}) {
-  return (
-    <button onClick={onClick} style={{
-      display: "flex", alignItems: "center", gap: 6, padding: "6px 16px", borderRadius: 6,
-      border: "none", background: bg, color: "#fff",
-      fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
-    }}>
-      {children}
-    </button>
-  );
-}
 
 // ── RunDetailView ──────────────────────────────────────────────────────────────
 
@@ -534,49 +513,42 @@ function RunDetailView({ run, progress, onClose, onStartFresh, onResume, onPause
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg)" }}>
 
       {/* ── Top bar ── */}
-      <div style={{ padding: "12px 24px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 16, flexShrink: 0 }}>
-        <button
-          onClick={onClose}
-          style={{
-            display: "flex", alignItems: "center", gap: 5, background: "none", border: "none",
-            cursor: "pointer", color: "var(--text-muted)", fontSize: 13, fontFamily: "inherit", padding: "4px 0",
-          }}
-        >
-          <ChevronLeft size={15} /> Back
-        </button>
-        <div style={{ width: 1, height: 16, background: "var(--border)" }} />
-        <span style={{ fontFamily: "monospace", fontWeight: 700, fontSize: 14, color: "var(--text)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {run.name}
-        </span>
-        <span style={{
-          padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 600,
-          background: statusColor + "22", border: `1px solid ${statusColor}55`, color: statusColor,
-          letterSpacing: "0.04em", textTransform: "uppercase", flexShrink: 0,
-        }}>
-          {RUN_STATUS_LABELS[run.status]}
-        </span>
-        {(run.status === "idle" || run.status === "done" || run.status === "failed") && (
-          <TopBarBtn onClick={onStartFresh} bg="var(--accent)">
-            <Play size={13} fill="#fff" />
-            {run.status === "idle" ? "Start" : run.status === "done" ? "Start Again" : "Retry"}
-          </TopBarBtn>
-        )}
-        {run.status === "paused" && (
-          <TopBarBtn onClick={onResume} bg="#3B82F6">
-            <Play size={13} fill="#fff" /> Resume
-          </TopBarBtn>
-        )}
-        {run.status === "training" && (
-          <TopBarBtn onClick={onPause} bg="#F97316">
-            <Pause size={13} fill="#fff" /> Pause
-          </TopBarBtn>
-        )}
-        {(run.status === "training" || run.status === "installing" || run.status === "paused") && (
-          <TopBarBtn onClick={onStop} bg="#EF4444">
-            <Square size={13} fill="#fff" /> Stop
-          </TopBarBtn>
-        )}
-      </div>
+      <DetailPageHeader
+        onBack={onClose}
+        title={run.name}
+        badge={
+          <span style={{
+            padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 600,
+            background: statusColor + "22", border: `1px solid ${statusColor}55`, color: statusColor,
+            letterSpacing: "0.04em", textTransform: "uppercase", flexShrink: 0,
+          }}>
+            {RUN_STATUS_LABELS[run.status]}
+          </span>
+        }
+        actions={<>
+          {(run.status === "idle" || run.status === "done" || run.status === "failed") && (
+            <HeaderBtn onClick={onStartFresh} bg="var(--accent)">
+              <Play size={13} fill="#fff" />
+              {run.status === "idle" ? "Start" : run.status === "done" ? "Start Again" : "Retry"}
+            </HeaderBtn>
+          )}
+          {run.status === "paused" && (
+            <HeaderBtn onClick={onResume} bg="#3B82F6">
+              <Play size={13} fill="#fff" /> Resume
+            </HeaderBtn>
+          )}
+          {run.status === "training" && (
+            <HeaderBtn onClick={onPause} bg="#F97316">
+              <Pause size={13} fill="#fff" /> Pause
+            </HeaderBtn>
+          )}
+          {(run.status === "training" || run.status === "installing" || run.status === "paused") && (
+            <HeaderBtn onClick={onStop} bg="#EF4444">
+              <Square size={13} fill="#fff" /> Stop
+            </HeaderBtn>
+          )}
+        </>}
+      />
 
       {/* ── Config strip ── */}
       <div style={{

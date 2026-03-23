@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import {
   ChevronLeft, ChevronRight, SkipForward,
-  Maximize2, Hand, Square, Lasso, ZoomIn, ZoomOut, Trash2, ArrowLeft,
+  Maximize2, Hand, Square, Lasso, ZoomIn, ZoomOut, Trash2,
 } from "lucide-react";
+import DetailPageHeader, { HeaderBtn } from "../components/DetailPageHeader";
 import AnnotationCanvas, { type CanvasHandle } from "../components/AnnotationCanvas";
 import ImageList from "../components/ImageList";
 import ClassPanel from "../components/ClassPanel";
@@ -278,61 +279,40 @@ export default function Annotate({ asset, onAssetUpdate, onBack }: Props) {
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
       {/* Top bar */}
-      <div style={{
-        height: 44, display: "flex", alignItems: "center",
-        padding: "0 16px", gap: 12, flexShrink: 0,
-        borderBottom: "1px solid var(--border)",
-        background: "var(--surface)",
-      }}>
-        <button
-          onClick={() => {
-            saveNow(images, classes);
-            onAssetUpdate({
-              ...asset,
-              imageCount:     images.length,
-              annotatedCount: images.filter(i => i.annotations.length > 0).length,
-              classes:        classes.map(c => c.name),
-              updatedAt:      "just now",
-            });
-          }}
-          style={{
-            display: "flex", alignItems: "center", gap: 4,
-            background: "none", border: "none", cursor: "pointer",
-            color: "var(--text-muted)", fontSize: 12, padding: 0, fontFamily: "inherit",
-          }}
-        >
-          <ArrowLeft size={12} /> Assets
-        </button>
-        <ChevronRight size={12} color="var(--border)" />
-        <span style={{ fontSize: 12, fontWeight: 500, color: "var(--text)" }}>{asset.name}</span>
-        <div style={{ width: 1, height: 16, background: "var(--border)" }} />
-        <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-          {images.length > 0 ? `${currentIndex + 1} / ${images.length}` : "No images"}
-        </span>
-        {images.length > 0 && (
-          <span style={{ fontSize: 11, color: "var(--text-muted)", opacity: 0.6 }}>A · D to navigate</span>
-        )}
-        <div style={{ flex: 1 }} />
-        {images.length > 0 && (
-          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-            {annotatedCount}/{images.length} annotated
+      <DetailPageHeader
+        onBack={() => {
+          saveNow(images, classes);
+          onAssetUpdate({
+            ...asset,
+            imageCount:     images.length,
+            annotatedCount: images.filter(i => i.annotations.length > 0).length,
+            classes:        classes.map(c => c.name),
+            updatedAt:      "just now",
+          });
+        }}
+        backLabel="Assets"
+        title={asset.name}
+        meta={
+          <span style={{ fontSize: 12, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 12 }}>
+            {images.length > 0 ? `${currentIndex + 1} / ${images.length}` : "No images"}
+            {images.length > 0 && (
+              <span style={{ opacity: 0.6, fontSize: 11 }}>A · D to navigate</span>
+            )}
+            {images.length > 0 && (
+              <span>{annotatedCount}/{images.length} annotated</span>
+            )}
           </span>
-        )}
-        <button
-          disabled={images.length === 0}
-          onClick={() => saveNow(images, classes)}
-          style={{
-            padding: "6px 14px", borderRadius: 6, border: "none",
-            background: images.length > 0 ? "var(--accent)" : "var(--border)",
-            color: images.length > 0 ? "#fff" : "var(--text-muted)",
-            fontSize: 12, fontWeight: 600,
-            cursor: images.length > 0 ? "pointer" : "not-allowed",
-            fontFamily: "inherit",
-          }}
-        >
-          Commit Annotations
-        </button>
-      </div>
+        }
+        actions={
+          <HeaderBtn
+            onClick={() => saveNow(images, classes)}
+            bg="var(--accent)"
+            disabled={images.length === 0}
+          >
+            Commit Annotations
+          </HeaderBtn>
+        }
+      />
 
       {/* Main area */}
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>

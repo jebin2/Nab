@@ -17,14 +17,14 @@ export default function Overview({ assets, runs, onNavigate }: Props) {
   const recentRuns = [...runs].slice(0, 3);
 
   return (
-    <div style={{ flex: 1, overflowY: "auto", background: "var(--bg)", padding: "28px 32px" }}>
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg)" }}>
 
-      <h1 style={{ fontSize: 22, fontWeight: 700, color: "var(--text)", letterSpacing: "-0.4px", marginBottom: 4 }}>
-        Overview
-      </h1>
-      <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 28 }}>
-        Your workspace at a glance.
-      </p>
+      {/* Header */}
+      <div style={{ height: 56, padding: "0 28px", display: "flex", alignItems: "center", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+        <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", letterSpacing: "-0.3px" }}>Overview</span>
+      </div>
+
+      <div style={{ flex: 1, overflowY: "auto", padding: "28px 32px" }}>
 
       {/* Stat cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 36 }}>
@@ -65,6 +65,7 @@ export default function Overview({ assets, runs, onNavigate }: Props) {
         </div>
       </div>
 
+      </div>
     </div>
   );
 }

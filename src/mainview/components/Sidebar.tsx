@@ -25,7 +25,7 @@ export default function Sidebar({ activePage, onNavigate }: Props) {
       height: "100%",
     }}>
       {/* Logo */}
-      <div style={{ padding: "20px 16px 16px", borderBottom: "1px solid var(--border)" }}>
+      <div style={{ height: 56, display: "flex", alignItems: "center", padding: "0 16px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{
             width: 28, height: 28,
