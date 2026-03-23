@@ -76,7 +76,7 @@ export default function App() {
         )}
         {activePage === "train"     && <Train assets={assets} runs={runs} onRunsChange={setRuns} />}
         {activePage === "inference" && <Inference runs={runs} />}
-        {activePage === "export"    && <Export />}
+        {activePage === "export"    && <Export runs={runs} />}
       </main>
     </div>
   );

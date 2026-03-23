@@ -7,6 +7,8 @@ import { homedir } from "os";
 const IMAGE_EXTS      = new Set([".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".tiff", ".tif"]);
 const TRAIN_SCRIPT    = join(import.meta.dir, "../python/train.py");
 const INFER_SCRIPT    = join(import.meta.dir, "../python/infer.py");
+const EXPORT_SCRIPT   = join(import.meta.dir, "../python/export.py");
+const CLI_SCRIPT      = join(import.meta.dir, "../python/cli.py");
 const RUNTIME_TARBALL = join(import.meta.dir, "../python/python-runtime.tar.gz");
 
 const YOLO_DIR        = join(homedir(), ".yolostudio");
@@ -409,6 +411,153 @@ const rpc = defineElectrobunRPC("bun", {
 					const hint = stderr.trim().split("\n").filter(l => l.trim()).pop() ?? "";
 					return { detections: [], inferenceMs, error: `Inference failed.${hint ? ` ${hint}` : ""}` };
 				}
+			},
+
+			exportModel: async ({ outputPath, format }: { outputPath: string; format: string }) => {
+				if (!(await Bun.file(VENV_READY_MARKER).exists()))
+					return { exportedPath: "", fileSize: 0, error: "Python environment not ready." };
+
+				const modelPath = join(outputPath, "weights", "weights", "best.pt");
+				if (!(await Bun.file(modelPath).exists()))
+					return { exportedPath: "", fileSize: 0, error: "Model weights not found." };
+
+				// PyTorch: best.pt already exists — nothing to convert.
+				if (format === "pt") {
+					const size = (await Bun.file(modelPath).size) ?? 0;
+					return { exportedPath: modelPath, fileSize: size, error: null };
+				}
+
+				const proc = Bun.spawn([VENV_PYTHON, EXPORT_SCRIPT], {
+					stdin: "pipe", stdout: "pipe", stderr: "pipe",
+				});
+				proc.stdin.write(JSON.stringify({ modelPath, format }));
+				proc.stdin.end();
+
+				const dec = new TextDecoder();
+				let stdout = ""; let stderr = "";
+				await Promise.all([
+					(async () => { for await (const c of proc.stdout) stdout += dec.decode(c); })(),
+					(async () => { for await (const c of proc.stderr) stderr += dec.decode(c); })(),
+				]);
+				await proc.exited;
+
+				const line = stdout.trim().split("\n").filter(Boolean).pop() ?? "";
+				try {
+					const data = JSON.parse(line);
+					if (data.error) return { exportedPath: "", fileSize: 0, error: data.error };
+					const fileSize = (await Bun.file(data.exportedPath).size) ?? 0;
+					return { exportedPath: data.exportedPath, fileSize, error: null };
+				} catch {
+					const hint = stderr.trim().split("\n").filter(Boolean).pop() ?? "";
+					return { exportedPath: "", fileSize: 0, error: `Export failed.${hint ? ` ${hint}` : ""}` };
+				}
+			},
+
+			exportCLI: async ({ outputPath, runName, destDir }: {
+				outputPath: string; runName: string; destDir: string;
+			}) => {
+				const modelPath = join(outputPath, "weights", "weights", "best.pt");
+				if (!(await Bun.file(modelPath).exists()))
+					return { bundlePath: "", error: "Model weights not found." };
+
+				const safeName  = runName.replace(/[^a-zA-Z0-9_-]/g, "_");
+				const bundleDir = join(destDir, `${safeName}-cli`);
+				await mkdir(bundleDir, { recursive: true });
+
+				// Copy assets into bundle.
+				await copyFile(modelPath,     join(bundleDir, "model.pt"));
+				await copyFile(CLI_SCRIPT,    join(bundleDir, "cli.py"));
+				await copyFile(RUNTIME_TARBALL, join(bundleDir, "python-runtime.tar.gz"));
+
+				// Write run.sh (Linux / macOS).
+				const runSh = `#!/usr/bin/env bash
+# YOLOStudio CLI — ${runName}
+# No external dependencies required — Python runtime is bundled.
+#
+# Usage:
+#   ./run.sh <image_path> [--conf 0.5] [--output output/]
+#
+# Example:
+#   ./run.sh photo.jpg
+#   ./run.sh photo.jpg --conf 0.7 --output results/
+
+set -e
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+RUNTIME_DIR="\\$SCRIPT_DIR/.runtime"
+VENV_DIR="\\$SCRIPT_DIR/.venv"
+RUNTIME_PYTHON="\\$RUNTIME_DIR/python/bin/python3"
+VENV_PYTHON="\\$VENV_DIR/bin/python"
+
+if [ ! -f "\\$RUNTIME_PYTHON" ]; then
+  echo "[setup] Extracting Python runtime (first run only)..."
+  mkdir -p "\\$RUNTIME_DIR"
+  tar xzf "\\$SCRIPT_DIR/python-runtime.tar.gz" -C "\\$RUNTIME_DIR"
+fi
+
+if [ ! -f "\\$VENV_DIR/.ready" ]; then
+  echo "[setup] Creating virtual environment..."
+  "\\$RUNTIME_PYTHON" -m venv --clear "\\$VENV_DIR"
+  echo "[setup] Installing ultralytics (may take a few minutes on first run)..."
+  "\\$VENV_PYTHON" -m pip install ultralytics --quiet
+  touch "\\$VENV_DIR/.ready"
+fi
+
+exec "\\$VENV_PYTHON" "\\$SCRIPT_DIR/cli.py" "\\$@"
+`;
+				await Bun.write(join(bundleDir, "run.sh"), runSh);
+				const chmodProc = Bun.spawn(["chmod", "+x", join(bundleDir, "run.sh")]);
+				await chmodProc.exited;
+
+				// Write README.
+				await Bun.write(join(bundleDir, "README.md"), `# ${runName} — YOLOStudio CLI Bundle
+
+Self-contained YOLO inference tool. No pre-installed dependencies required.
+
+## Quick Start
+
+\`\`\`bash
+./run.sh photo.jpg
+./run.sh photo.jpg --conf 0.7
+./run.sh photo.jpg --conf 0.5 --output results/
+\`\`\`
+
+## What's Included
+
+| File | Description |
+|------|-------------|
+| \`run.sh\` | Runner script — extracts runtime and runs inference |
+| \`cli.py\` | Python inference script |
+| \`model.pt\` | Trained YOLO model weights |
+| \`python-runtime.tar.gz\` | Bundled Python runtime (no system Python needed) |
+
+## First Run
+
+On first run \`run.sh\` will:
+1. Extract the bundled Python runtime into \`.runtime/\`
+2. Create a virtual environment in \`.venv/\`
+3. Install \`ultralytics\` (requires internet — ~200MB)
+
+Subsequent runs start immediately.
+
+## Output
+
+Detected objects are printed as JSON. Annotated images are saved to \`./output/detect/\`.
+`);
+
+				return { bundlePath: bundleDir, error: null };
+			},
+
+			revealInFilesystem: async ({ path }: { path: string }) => {
+				const dir = path.includes(".") && !path.endsWith("/")
+					? path.split("/").slice(0, -1).join("/")
+					: path;
+				const cmd = process.platform === "darwin"
+					? ["open", "-R", path]
+					: process.platform === "win32"
+						? ["explorer", `/select,${path}`]
+						: ["xdg-open", dir];
+				Bun.spawn(cmd);
+				return {};
 			},
 
 			stopTraining: async ({ runId, clearCheckpoint, outputPath }: {

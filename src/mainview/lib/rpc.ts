@@ -78,6 +78,18 @@ type RPCSchema = {
         params:   { runId: string };
         response: Record<string, never>;
       };
+      exportModel: {
+        params:   { outputPath: string; format: string };
+        response: { exportedPath: string; fileSize: number; error: string | null };
+      };
+      exportCLI: {
+        params:   { outputPath: string; runName: string; destDir: string };
+        response: { bundlePath: string; error: string | null };
+      };
+      revealInFilesystem: {
+        params:   { path: string };
+        response: Record<string, never>;
+      };
       runInference: {
         params: { imagePath: string; outputPath: string; confidence: number };
         response: {
