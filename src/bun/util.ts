@@ -18,7 +18,7 @@ export const TRAIN_SCRIPT      = join(import.meta.dir, "../python/train.py");
 export const INFER_SCRIPT      = join(import.meta.dir, "../python/infer.py");
 export const EXPORT_SCRIPT     = join(import.meta.dir, "../python/export.py");
 export const YOLO_UTILS_SCRIPT = join(import.meta.dir, "../python/yolo_utils.py");
-export const RUNTIME_TARBALL   = join(import.meta.dir, "../python/python-runtime.tar.gz");
+export const RUNTIME_TARBALL   = join(YOLO_DIR, "python-runtime.tar.gz");
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -65,8 +65,8 @@ export function checkpointPath(outputPath: string): string {
 }
 
 // ── downloadPythonRuntime ─────────────────────────────────────────────────────
-// Downloads python-build-standalone for the current OS/arch. Used when no
-// bundled tarball is present.
+// Downloads python-build-standalone for the current OS/arch into the local
+// YOLOStudio cache under ~/.yolostudio.
 
 const PYTHON_PLATFORM_MAP: Record<string, string> = {
 	"linux-x64":    "x86_64-unknown-linux-gnu-install_only_stripped.tar.gz",
@@ -157,15 +157,11 @@ export async function prepareEnvironmentWithOptions(
 	}
 
 	if (!(await Bun.file(RUNTIME_PYTHON).exists())) {
-		// Desktop app: use bundled tarball. Standalone CLI: download for current OS.
-		let tarball = RUNTIME_TARBALL;
-		if (!(await Bun.file(tarball).exists())) {
-			tarball = join(YOLO_DIR, "python-runtime.tar.gz");
-			await downloadPythonRuntime(tarball, log);
-		}
+		if (!(await Bun.file(RUNTIME_TARBALL).exists()))
+			await downloadPythonRuntime(RUNTIME_TARBALL, log);
 		await log("[setup] Extracting Python runtime…");
 		await mkdir(RUNTIME_DIR, { recursive: true });
-		await run(["tar", "xzf", tarball, "-C", RUNTIME_DIR], "tar extract");
+		await run(["tar", "xzf", RUNTIME_TARBALL, "-C", RUNTIME_DIR], "tar extract");
 		await log("[setup] Python runtime ready.");
 	}
 
