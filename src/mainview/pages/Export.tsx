@@ -209,16 +209,17 @@ export default function Export({ runs }: Props) {
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 4 }}>
-                  Standalone CLI Bundle
+                  Standalone CLI Executable
                 </div>
                 <p style={{ fontSize: 13, color: "var(--text-muted)", lineHeight: 1.6, marginBottom: 16 }}>
-                  Bundle the model, inference script, and bundled Python runtime into a single folder.
-                  Run inference from any terminal with a single command — no Python or dependencies needed on the target machine.
+                  Compiles a single self-contained binary (via Bun) that embeds the model and inference script.
+                  Download it, make it executable, and run it from any terminal — no Python or YOLOStudio needed.
+                  On first run it auto-creates a venv and installs ultralytics; subsequent runs are instant.
                 </p>
 
                 {/* What's included */}
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 20 }}>
-                  {["cli.py", "model.pt", "python-runtime", "run.sh", "README.md"].map(item => (
+                  {["Bun runtime", "model.pt", "cli.py", "auto-venv"].map(item => (
                     <span key={item} style={{
                       padding: "3px 10px", borderRadius: 6,
                       background: "var(--bg)", border: "1px solid var(--border)",
@@ -234,10 +235,10 @@ export default function Export({ runs }: Props) {
                   marginBottom: 20, border: "1px solid #2E2E2E",
                 }}>
                   <span style={{ color: "#6B7280" }}>$ </span>
-                  <span>./run.sh photo.jpg</span>
+                  <span>./detect photo.jpg</span>
                   <br />
                   <span style={{ color: "#6B7280" }}>$ </span>
-                  <span>./run.sh photo.jpg --conf 0.7 --output results/</span>
+                  <span>./detect photo.jpg --conf 0.7 --output results/</span>
                 </div>
 
                 {/* Output folder picker */}
@@ -281,8 +282,8 @@ export default function Export({ runs }: Props) {
                     }}
                   >
                     {cliState === "exporting"
-                      ? <><Loader size={14} /> Bundling…</>
-                      : <><Terminal size={14} /> Export CLI Bundle</>
+                      ? <><Loader size={14} /> Compiling…</>
+                      : <><Terminal size={14} /> Build CLI Executable</>
                     }
                   </button>
 

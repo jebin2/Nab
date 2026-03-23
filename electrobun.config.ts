@@ -22,6 +22,7 @@ export default {
 			"src/python/infer.py":                  "python/infer.py",
 			"src/python/export.py":                 "python/export.py",
 			"src/python/cli.py":                    "python/cli.py",
+			"src/bun/cli-template.ts":              "bun/cli-template.ts",
 			// Standalone Python runtime bundled at build time (download-python.ts).
 			// Extracted to ~/.yolostudio/python-runtime on first training run.
 			"src/python/python-runtime.tar.gz":     "python/python-runtime.tar.gz",

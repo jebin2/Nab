@@ -1,15 +1,16 @@
 import Electrobun, { BrowserWindow, defineElectrobunRPC } from "electrobun/bun";
-import { readdir, mkdir, copyFile, appendFile, unlink } from "fs/promises";
+import { readdir, mkdir, copyFile, appendFile, unlink, rm, mkdtemp } from "fs/promises";
 import { join, extname, basename } from "path";
 import { randomBytes } from "crypto";
-import { homedir } from "os";
+import { homedir, tmpdir } from "os";
 
 const IMAGE_EXTS      = new Set([".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".tiff", ".tif"]);
 const TRAIN_SCRIPT    = join(import.meta.dir, "../python/train.py");
 const INFER_SCRIPT    = join(import.meta.dir, "../python/infer.py");
 const EXPORT_SCRIPT   = join(import.meta.dir, "../python/export.py");
-const CLI_SCRIPT      = join(import.meta.dir, "../python/cli.py");
-const RUNTIME_TARBALL = join(import.meta.dir, "../python/python-runtime.tar.gz");
+const CLI_SCRIPT          = join(import.meta.dir, "../python/cli.py");
+const CLI_TEMPLATE_SCRIPT = join(import.meta.dir, "cli-template.ts");
+const RUNTIME_TARBALL     = join(import.meta.dir, "../python/python-runtime.tar.gz");
 
 const YOLO_DIR        = join(homedir(), ".yolostudio");
 const RUNTIME_DIR     = join(YOLO_DIR, "python-runtime");
@@ -461,90 +462,32 @@ const rpc = defineElectrobunRPC("bun", {
 					return { bundlePath: "", error: "Model weights not found." };
 
 				const safeName  = runName.replace(/[^a-zA-Z0-9_-]/g, "_");
-				const bundleDir = join(destDir, `${safeName}-cli`);
-				await mkdir(bundleDir, { recursive: true });
+				const outBinary = join(destDir, safeName + (process.platform === "win32" ? ".exe" : ""));
 
-				// Copy assets into bundle.
-				await copyFile(modelPath,     join(bundleDir, "model.pt"));
-				await copyFile(CLI_SCRIPT,    join(bundleDir, "cli.py"));
-				await copyFile(RUNTIME_TARBALL, join(bundleDir, "python-runtime.tar.gz"));
+				// Create a temp dir with all assets the template needs at compile time.
+				const buildDir = await mkdtemp(join(tmpdir(), "yolostudio-cli-"));
+				try {
+					await copyFile(modelPath,          join(buildDir, "model.pt"));
+					await copyFile(CLI_SCRIPT,         join(buildDir, "cli.py"));
+					await copyFile(CLI_TEMPLATE_SCRIPT, join(buildDir, "cli.ts"));
 
-				// Write run.sh (Linux / macOS).
-				const runSh = `#!/usr/bin/env bash
-# YOLOStudio CLI — ${runName}
-# No external dependencies required — Python runtime is bundled.
-#
-# Usage:
-#   ./run.sh <image_path> [--conf 0.5] [--output output/]
-#
-# Example:
-#   ./run.sh photo.jpg
-#   ./run.sh photo.jpg --conf 0.7 --output results/
+					// Compile: bun build --compile cli.ts --outfile <binary>
+					// process.execPath is the running Bun binary — guaranteed to exist.
+					const proc = Bun.spawn(
+						[process.execPath, "build", "--compile", join(buildDir, "cli.ts"), "--outfile", outBinary],
+						{ stdout: "pipe", stderr: "pipe" },
+					);
+					let stderr = "";
+					for await (const chunk of proc.stderr) stderr += new TextDecoder().decode(chunk);
+					const exitCode = await proc.exited;
+					if (exitCode !== 0) {
+						return { bundlePath: "", error: `Compile failed: ${stderr.trim().split("\n").pop()}` };
+					}
+				} finally {
+					await rm(buildDir, { recursive: true, force: true }).catch(() => {});
+				}
 
-set -e
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-RUNTIME_DIR="\\$SCRIPT_DIR/.runtime"
-VENV_DIR="\\$SCRIPT_DIR/.venv"
-RUNTIME_PYTHON="\\$RUNTIME_DIR/python/bin/python3"
-VENV_PYTHON="\\$VENV_DIR/bin/python"
-
-if [ ! -f "\\$RUNTIME_PYTHON" ]; then
-  echo "[setup] Extracting Python runtime (first run only)..."
-  mkdir -p "\\$RUNTIME_DIR"
-  tar xzf "\\$SCRIPT_DIR/python-runtime.tar.gz" -C "\\$RUNTIME_DIR"
-fi
-
-if [ ! -f "\\$VENV_DIR/.ready" ]; then
-  echo "[setup] Creating virtual environment..."
-  "\\$RUNTIME_PYTHON" -m venv --clear "\\$VENV_DIR"
-  echo "[setup] Installing ultralytics (may take a few minutes on first run)..."
-  "\\$VENV_PYTHON" -m pip install ultralytics --quiet
-  touch "\\$VENV_DIR/.ready"
-fi
-
-exec "\\$VENV_PYTHON" "\\$SCRIPT_DIR/cli.py" "\\$@"
-`;
-				await Bun.write(join(bundleDir, "run.sh"), runSh);
-				const chmodProc = Bun.spawn(["chmod", "+x", join(bundleDir, "run.sh")]);
-				await chmodProc.exited;
-
-				// Write README.
-				await Bun.write(join(bundleDir, "README.md"), `# ${runName} — YOLOStudio CLI Bundle
-
-Self-contained YOLO inference tool. No pre-installed dependencies required.
-
-## Quick Start
-
-\`\`\`bash
-./run.sh photo.jpg
-./run.sh photo.jpg --conf 0.7
-./run.sh photo.jpg --conf 0.5 --output results/
-\`\`\`
-
-## What's Included
-
-| File | Description |
-|------|-------------|
-| \`run.sh\` | Runner script — extracts runtime and runs inference |
-| \`cli.py\` | Python inference script |
-| \`model.pt\` | Trained YOLO model weights |
-| \`python-runtime.tar.gz\` | Bundled Python runtime (no system Python needed) |
-
-## First Run
-
-On first run \`run.sh\` will:
-1. Extract the bundled Python runtime into \`.runtime/\`
-2. Create a virtual environment in \`.venv/\`
-3. Install \`ultralytics\` (requires internet — ~200MB)
-
-Subsequent runs start immediately.
-
-## Output
-
-Detected objects are printed as JSON. Annotated images are saved to \`./output/detect/\`.
-`);
-
-				return { bundlePath: bundleDir, error: null };
+				return { bundlePath: outBinary, error: null };
 			},
 
 			revealInFilesystem: async ({ path }: { path: string }) => {
