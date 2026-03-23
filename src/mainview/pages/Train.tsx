@@ -270,7 +270,7 @@ function RunCard({ run, assets, progress, onClick, onStart, onStop, onDelete }: 
             {run.name}
           </h3>
           <div style={{ display: "flex", gap: 4, marginLeft: 8, flexShrink: 0 }}>
-            {run.status === "idle" && (
+            {(run.status === "idle" || run.status === "failed") && (
               <ActionBtn Icon={Play} color="var(--accent)" title="Start training" onClick={onStart} />
             )}
             {run.status === "training" && (
@@ -496,7 +496,7 @@ function RunDetailView({ run, progress, onClose, onStart, onStop }: {
         }}>
           {RUN_STATUS_LABELS[run.status]}
         </span>
-        {run.status === "idle" && (
+        {(run.status === "idle" || run.status === "failed") && (
           <button
             onClick={onStart}
             style={{
@@ -505,7 +505,7 @@ function RunDetailView({ run, progress, onClose, onStart, onStop }: {
               fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
             }}
           >
-            <Play size={13} fill="#fff" /> Start Training
+            <Play size={13} fill="#fff" /> {run.status === "failed" ? "Retry" : "Start Training"}
           </button>
         )}
         {run.status === "training" && (
