@@ -12,10 +12,11 @@ const YOLO_DIR        = join(homedir(), ".yolostudio");
 const RUNTIME_DIR     = join(YOLO_DIR, "python-runtime");
 const VENV_DIR        = join(YOLO_DIR, "venv");
 
-// python-build-standalone extracts to python/install/...
 const IS_WIN          = process.platform === "win32";
 const RUNTIME_PYTHON  = join(RUNTIME_DIR, "python", IS_WIN ? "python.exe" : "bin/python3");
 const VENV_PYTHON     = join(VENV_DIR, IS_WIN ? "Scripts/python.exe" : "bin/python");
+// Written only after a successful pip install — used to detect partial/failed venv.
+const VENV_READY_MARKER = join(VENV_DIR, ".ready");
 
 /**
  * Returns [venvPython, trainScript].
@@ -32,24 +33,35 @@ async function getTrainCommand(logPath: string): Promise<string[]> {
 	const log = (text: string) =>
 		appendFile(logPath, JSON.stringify({ type: "stderr", text }) + "\n").catch(() => {});
 
-	// Runs a command and streams its stderr lines to the log file.
-	async function run(cmd: string[], label: string): Promise<void> {
-		const proc = Bun.spawn(cmd, { stdout: "pipe", stderr: "pipe" });
-
-		// Stream stderr lines to train.log so the terminal panel shows progress.
-		(async () => {
-			const decoder = new TextDecoder();
-			let buf = "";
-			for await (const chunk of proc.stderr) {
-				buf += decoder.decode(chunk, { stream: true });
-				const lines = buf.split("\n");
-				buf = lines.pop() ?? "";
-				for (const line of lines) {
-					if (line.trim()) await log(line);
-				}
+	// Streams one output pipe (stdout or stderr) to the log, splitting on \n and \r.
+	async function streamPipe(pipe: AsyncIterable<Uint8Array>): Promise<void> {
+		const decoder = new TextDecoder();
+		let buf = "";
+		for await (const chunk of pipe) {
+			buf += decoder.decode(chunk, { stream: true });
+			// pip uses \r for progress bars and \n for completed lines — handle both.
+			const lines = buf.split(/[\r\n]/);
+			buf = lines.pop() ?? "";
+			for (const line of lines) {
+				if (line.trim()) await log(line.trim());
 			}
-			if (buf.trim()) await log(buf);
-		})().catch(() => {});
+		}
+		if (buf.trim()) await log(buf.trim());
+	}
+
+	// Runs a command, streams both stdout+stderr to the log, checks exit code.
+	async function run(cmd: string[], label: string): Promise<void> {
+		const proc = Bun.spawn(cmd, {
+			stdout: "pipe",
+			stderr: "pipe",
+			env: { ...process.env, PYTHONUNBUFFERED: "1" },
+		});
+
+		// Stream both pipes concurrently so nothing is missed.
+		await Promise.all([
+			streamPipe(proc.stdout).catch(() => {}),
+			streamPipe(proc.stderr).catch(() => {}),
+		]);
 
 		const code = await proc.exited;
 		if (code !== 0) {
@@ -66,15 +78,20 @@ async function getTrainCommand(logPath: string): Promise<string[]> {
 		await log("[setup] Python runtime ready.");
 	}
 
-	// ── 2. Create virtualenv ───────────────────────────────────────────────────
-	if (!(await Bun.file(VENV_PYTHON).exists())) {
+	// ── 2. Create virtualenv + install ultralytics ────────────────────────────
+	// Guard on .ready marker (not just venv existence) so a failed pip install
+	// doesn't leave us with a broken venv that skips reinstallation next time.
+	if (!(await Bun.file(VENV_READY_MARKER).exists())) {
 		await log("[setup] Creating virtual environment at ~/.yolostudio/venv…");
-		await run([RUNTIME_PYTHON, "-m", "venv", VENV_DIR], "venv create");
+		await run([RUNTIME_PYTHON, "-m", "venv", "--clear", VENV_DIR], "venv create");
 		await log("[setup] Virtual environment created.");
 
 		// ── 3. Install ultralytics ─────────────────────────────────────────────
 		await log("[setup] Installing ultralytics (first run only — may take a few minutes)…");
 		await run([VENV_PYTHON, "-m", "pip", "install", "ultralytics"], "pip install");
+
+		// Only written on success — partial installs retry on next attempt.
+		await Bun.write(VENV_READY_MARKER, "ready");
 		await log("[setup] Environment ready. Starting training…");
 	}
 
