@@ -1,4 +1,4 @@
-import { LayoutDashboard, Layers, Cpu, Scan, Upload, BookOpen, LifeBuoy } from "lucide-react";
+import { LayoutDashboard, Layers, Cpu, Scan, Upload } from "lucide-react";
 import { type NavPage } from "../lib/types";
 
 interface Props {
@@ -14,10 +14,6 @@ const NAV_ITEMS: { id: NavPage; label: string; Icon: React.ElementType }[] = [
   { id: "export",     label: "Export",     Icon: Upload },
 ];
 
-const FOOTER_LINKS: { label: string; Icon: React.ElementType }[] = [
-  { label: "Documentation", Icon: BookOpen },
-  { label: "Support",       Icon: LifeBuoy },
-];
 
 export default function Sidebar({ activePage, onNavigate }: Props) {
   return (
@@ -81,29 +77,6 @@ export default function Sidebar({ activePage, onNavigate }: Props) {
         })}
       </nav>
 
-      {/* Footer links */}
-      <div style={{ padding: "8px", borderTop: "1px solid var(--border)" }}>
-        {FOOTER_LINKS.map(({ label, Icon }) => (
-          <button
-            key={label}
-            style={{
-              width: "100%",
-              display: "flex", alignItems: "center", gap: 10,
-              padding: "7px 10px", borderRadius: 6, border: "none",
-              cursor: "pointer",
-              background: "transparent",
-              color: "var(--text-muted)",
-              fontSize: 12, textAlign: "left",
-              marginBottom: 2,
-            }}
-            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--text)"; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--text-muted)"; }}
-          >
-            <Icon size={13} strokeWidth={1.5} />
-            {label}
-          </button>
-        ))}
-      </div>
     </aside>
   );
 }

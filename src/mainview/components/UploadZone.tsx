@@ -72,12 +72,15 @@ export default function UploadZone({ onLoad }: Props) {
   );
 }
 
+const SPIN_STYLE = document.createElement("style");
+SPIN_STYLE.textContent = "@keyframes spin { to { transform: rotate(360deg); } }";
+document.head.appendChild(SPIN_STYLE);
+
 function LoadingState() {
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
       <Loader size={28} color="var(--accent)" style={{ animation: "spin 1s linear infinite" }} />
       <span style={{ fontSize: 13, color: "var(--text-muted)" }}>Loading images…</span>
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }

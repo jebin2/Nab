@@ -1,15 +1,16 @@
 import { useState } from "react";
 import { Plus, MoreHorizontal, FolderOpen, Cpu } from "lucide-react";
 import { type TrainingRun, type Asset } from "../lib/types";
-import { MOCK_ASSETS, RUN_STATUS_LABELS, RUN_STATUS_COLORS, BASE_MODELS, CLASS_COLORS } from "../lib/constants";
+import { RUN_STATUS_LABELS, RUN_STATUS_COLORS, BASE_MODELS, CLASS_COLORS } from "../lib/constants";
 import { getRPC } from "../lib/rpc";
 
 interface Props {
+  assets: Asset[];
   runs: TrainingRun[];
   onRunsChange: (runs: TrainingRun[]) => void;
 }
 
-export default function Train({ runs, onRunsChange }: Props) {
+export default function Train({ assets, runs, onRunsChange }: Props) {
   const [showModal, setShowModal] = useState(false);
 
   function handleCreate(run: TrainingRun) {
@@ -50,7 +51,7 @@ export default function Train({ runs, onRunsChange }: Props) {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 }}>
 
           {runs.map(run => (
-            <RunCard key={run.id} run={run} assets={MOCK_ASSETS} />
+            <RunCard key={run.id} run={run} assets={assets} />
           ))}
 
           <button
@@ -78,7 +79,7 @@ export default function Train({ runs, onRunsChange }: Props) {
       </div>
 
       {showModal && (
-        <NewRunModal assets={MOCK_ASSETS} onClose={() => setShowModal(false)} onCreate={handleCreate} />
+        <NewRunModal assets={assets} onClose={() => setShowModal(false)} onCreate={handleCreate} />
       )}
     </div>
   );

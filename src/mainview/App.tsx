@@ -24,7 +24,8 @@ export default function App() {
       setAssets(data.assets);
       setRuns(data.runs);
       loaded.current = true;
-    }).catch(() => {
+    }).catch(err => {
+      console.error("Failed to load studio data:", err);
       loaded.current = true;
     });
   }, []);
@@ -32,7 +33,9 @@ export default function App() {
   // Auto-save whenever assets or runs change (after initial load).
   useEffect(() => {
     if (!loaded.current) return;
-    getRPC().request.saveStudio({ assets, runs }).catch(() => {});
+    getRPC().request.saveStudio({ assets, runs }).catch(err => {
+      console.error("Failed to save studio data:", err);
+    });
   }, [assets, runs]);
 
   function navigate(page: NavPage) {
@@ -71,7 +74,7 @@ export default function App() {
             onBack={() => setActiveAsset(null)}
           />
         )}
-        {activePage === "train"     && <Train runs={runs} onRunsChange={setRuns} />}
+        {activePage === "train"     && <Train assets={assets} runs={runs} onRunsChange={setRuns} />}
         {activePage === "inference" && <Inference />}
         {activePage === "export"    && <Export />}
       </main>

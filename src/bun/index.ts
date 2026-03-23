@@ -75,7 +75,9 @@ const rpc = defineElectrobunRPC("bun", {
 				try {
 					const file = Bun.file(studioFile);
 					if (await file.exists()) return JSON.parse(await file.text());
-				} catch {}
+				} catch (err) {
+					console.error("Failed to parse studio.json:", err);
+				}
 				return { assets: [], runs: [] };
 			},
 

@@ -128,7 +128,7 @@ export default function Annotate({ asset, onAssetUpdate, onBack }: Props) {
       storagePath: asset.storagePath,
       labels,
       classes: cls.map(c => c.name),
-    }).catch(() => {});
+    }).catch(err => console.error("Failed to save annotations:", err));
   }
 
   // Schedule a debounced save (200 ms). Uses refs so the timeout always sees
@@ -165,7 +165,8 @@ export default function Annotate({ asset, onAssetUpdate, onBack }: Props) {
         });
         scheduleSave();
       })
-      .catch(() => {
+      .catch(err => {
+        console.error("Failed to import images:", err);
         setImages(prev => {
           const existing = new Set(prev.map(img => img.filename));
           const toAdd = entries.filter(e => !existing.has(e.filename));
@@ -194,7 +195,7 @@ export default function Annotate({ asset, onAssetUpdate, onBack }: Props) {
       setCanvasSrc(src);
     }).catch(() => {});
     return () => { canceled = true; };
-  }, [currentIndex, images[currentIndex]?.filePath]);
+  }, [currentIndex, images[currentIndex]?.id]);
 
   // ── annotations ───────────────────────────────────────────────────────────
 
@@ -229,7 +230,7 @@ export default function Annotate({ asset, onAssetUpdate, onBack }: Props) {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [images.length]);
+  }, [images.length, currentIndex]);
 
   // ── derived state ─────────────────────────────────────────────────────────
 
