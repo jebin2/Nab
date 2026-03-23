@@ -48,15 +48,15 @@ export default function Train({ assets, runs, onRunsChange }: Props) {
 
   // Poll log files for every training run once per second.
   useEffect(() => {
-    const trainingIds = runs
-      .filter(r => r.status === "training")
+    const activeIds = runs
+      .filter(r => r.status === "installing" || r.status === "training")
       .map(r => r.id)
       .join(",");
 
-    if (!trainingIds) return;
+    if (!activeIds) return;
 
     async function poll() {
-      for (const run of runsRef.current.filter(r => r.status === "training")) {
+      for (const run of runsRef.current.filter(r => r.status === "installing" || r.status === "training")) {
         try {
           const { lines } = await getRPC().request.readTrainingLog({ outputPath: run.outputPath });
           const { progress, done, error } = parseLog(lines);
@@ -81,7 +81,7 @@ export default function Train({ assets, runs, onRunsChange }: Props) {
     poll();
     const interval = setInterval(poll, 1000);
     return () => clearInterval(interval);
-  }, [runs.filter(r => r.status === "training").map(r => r.id).join(",")]);
+  }, [runs.filter(r => r.status === "installing" || r.status === "training").map(r => r.id).join(",")]);
 
   function handleCreate(run: TrainingRun) {
     onRunsChange([...runs, run]);
@@ -89,11 +89,10 @@ export default function Train({ assets, runs, onRunsChange }: Props) {
   }
 
   async function handleStart(run: TrainingRun) {
-    // Optimistically mark as training immediately so the stop button appears
-    // and the terminal log starts showing setup messages while the RPC is pending
-    // (venv creation + pip install can take several minutes on first run).
+    // Show "installing" immediately — setup (venv + pip install ultralytics) can
+    // take several minutes on first run. Flips to "training" once RPC returns.
     onRunsChange(runs.map(r =>
-      r.id === run.id ? { ...r, status: "training" as const, updatedAt: "just now" } : r
+      r.id === run.id ? { ...r, status: "installing" as const, updatedAt: "just now" } : r
     ));
 
     const runAssets = assets.filter(a => run.assetIds.includes(a.id));
@@ -110,6 +109,10 @@ export default function Train({ assets, runs, onRunsChange }: Props) {
         device:     run.device,
         outputPath: run.outputPath,
       });
+      // Setup done — YOLO training is now actually running.
+      onRunsChange(runsRef.current.map(r =>
+        r.id === run.id ? { ...r, status: "training" as const } : r
+      ));
     } catch (err) {
       console.error("Failed to start training:", err);
       // Revert status if the RPC itself threw.
@@ -273,8 +276,8 @@ function RunCard({ run, assets, progress, onClick, onStart, onStop, onDelete }: 
             {(run.status === "idle" || run.status === "failed") && (
               <ActionBtn Icon={Play} color="var(--accent)" title="Start training" onClick={onStart} />
             )}
-            {run.status === "training" && (
-              <ActionBtn Icon={Square} color="#EF4444" title="Stop training" onClick={onStop} />
+            {(run.status === "installing" || run.status === "training") && (
+              <ActionBtn Icon={Square} color="#EF4444" title="Stop" onClick={onStop} />
             )}
             {(run.status === "idle" || run.status === "done" || run.status === "failed") && (
               <ActionBtn Icon={Trash2} color="var(--text-muted)" title="Delete run" onClick={onDelete} danger />
@@ -508,7 +511,7 @@ function RunDetailView({ run, progress, onClose, onStart, onStop }: {
             <Play size={13} fill="#fff" /> {run.status === "failed" ? "Retry" : "Start Training"}
           </button>
         )}
-        {run.status === "training" && (
+        {(run.status === "installing" || run.status === "training") && (
           <button
             onClick={onStop}
             style={{
@@ -552,7 +555,7 @@ function RunDetailView({ run, progress, onClose, onStart, onStop }: {
           {/* Loss chart */}
           <div style={{ padding: "16px 20px", background: "var(--surface)", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-              {run.status === "training" && (
+              {(run.status === "installing" || run.status === "training") && (
                 <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--accent)", display: "inline-block", animation: "pulse 1.5s infinite" }} />
               )}
               <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--text)" }}>

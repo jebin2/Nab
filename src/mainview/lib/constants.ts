@@ -12,17 +12,19 @@ export const CLASS_COLORS = [
 ];
 
 export const RUN_STATUS_LABELS: Record<RunStatus, string> = {
-  idle:     "Idle",
-  training: "Training",
-  done:     "Done",
-  failed:   "Failed",
+  idle:       "Idle",
+  installing: "Installing",
+  training:   "Training",
+  done:       "Done",
+  failed:     "Failed",
 };
 
 export const RUN_STATUS_COLORS: Record<RunStatus, string> = {
-  idle:     "#6B7280",
-  training: "#F97316",
-  done:     "#22C55E",
-  failed:   "#EF4444",
+  idle:       "#6B7280",
+  installing: "#A855F7",
+  training:   "#F97316",
+  done:       "#22C55E",
+  failed:     "#EF4444",
 };
 
 export const BASE_MODELS = [
