@@ -238,7 +238,7 @@ export default function Export({ runs }: Props) {
                   <span>{selectedRun ? `${selectedRun.name.replace(/[^a-zA-Z0-9_-]/g, "_")}-detect` : "detect"} photo.jpg</span>
                   <br />
                   <span style={{ color: "#6B7280" }}>$ </span>
-                  <span>{selectedRun ? `${selectedRun.name.replace(/[^a-zA-Z0-9_-]/g, "_")}-detect` : "detect"} photo.jpg --conf 0.7 --output results/</span>
+                  <span>{selectedRun ? `${selectedRun.name.replace(/[^a-zA-Z0-9_-]/g, "_")}-detect` : "detect"} photo.jpg --conf 0.7 --output_path out.json</span>
                 </div>
 
                 {/* Output folder picker */}

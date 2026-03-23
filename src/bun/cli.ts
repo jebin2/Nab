@@ -5,6 +5,7 @@
  * Usage:
  *   ./detect photo.jpg
  *   ./detect photo.jpg --conf 0.7
+ *   ./detect photo.jpg --log_path run.log --output_path results.json
  */
 
 import { mkdir, writeFile } from "fs/promises";
@@ -16,25 +17,32 @@ import { YOLO_DIR, runInference } from "./util";
 
 // Embedded at compile time by bun build --compile
 // `with { type: "file" }` tells Bun to embed the file and gives back a path.
-import modelPtPath  from "./model.pt"  with { type: "file" };
-import inferPyPath  from "./infer.py"  with { type: "file" };
+import modelPtPath from "./model.pt" with { type: "file" };
+import inferPyPath from "./infer.py" with { type: "file" };
 
 // ── Arg parsing ───────────────────────────────────────────────────────────────
 
 const args = Bun.argv.slice(2);
 
 if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {
-	console.log(`Usage: ./${basename(Bun.argv[1])} <image.jpg> [--conf 0.5]`);
+	console.log(`Usage: ./${basename(Bun.argv[1])} <image.jpg> [options]`);
 	console.log("\nOptions:");
-	console.log("  --conf    Confidence threshold 0–1  (default: 0.5)");
+	console.log("  --conf         Confidence threshold 0–1  (default: 0.5)");
+	console.log("  --log_path     Save setup log to file    (default: ~/.yolostudio/cli-setup.log)");
+	console.log("  --output_path  Save detections as JSON   (default: none)");
 	process.exit(0);
 }
 
 const imagePath = args[0];
 let confidence  = 0.5;
-for (let i = 1; i < args.length; i++)
-	if ((args[i] === "--conf" || args[i] === "-c") && args[i + 1])
-		confidence = parseFloat(args[++i]);
+let logPath     = join(YOLO_DIR, "cli-setup.log");
+let outputPath  = "";
+
+for (let i = 1; i < args.length; i++) {
+	if ((args[i] === "--conf")        && args[i + 1]) confidence = parseFloat(args[++i]);
+	if ((args[i] === "--log_path")    && args[i + 1]) logPath    = args[++i];
+	if ((args[i] === "--output_path") && args[i + 1]) outputPath = args[++i];
+}
 
 if (!existsSync(imagePath)) {
 	console.error(`Error: image not found: ${imagePath}`);
@@ -61,7 +69,6 @@ await writeFile(inferPyTmpPath, await Bun.file(inferPyPath).text());
 
 // ── Run inference (same util function as the desktop app) ─────────────────────
 
-const logPath = join(YOLO_DIR, "cli-setup.log");
 const { detections, inferenceMs, error } = await runInference(
 	imagePath, modelPath, confidence, inferPyTmpPath, logPath, "cli",
 );
@@ -74,3 +81,10 @@ if (error) {
 console.log(`\n✓  ${detections.length} object(s) detected in ${inferenceMs}ms\n`);
 for (const d of detections)
 	console.log(`   ${d.label.padEnd(20)} ${(d.confidence * 100).toFixed(1)}%`);
+
+// ── Save JSON output if requested ─────────────────────────────────────────────
+
+if (outputPath) {
+	await writeFile(outputPath, JSON.stringify({ imagePath, inferenceMs, detections }, null, 2));
+	console.log(`\nDetections saved → ${outputPath}`);
+}
