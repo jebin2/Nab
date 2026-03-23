@@ -443,6 +443,20 @@ function ActionBtn({ Icon, color, title, onClick, danger }: {
   );
 }
 
+function TopBarBtn({ onClick, bg, children }: {
+  onClick: () => void; bg: string; children: React.ReactNode;
+}) {
+  return (
+    <button onClick={onClick} style={{
+      display: "flex", alignItems: "center", gap: 6, padding: "6px 16px", borderRadius: 6,
+      border: "none", background: bg, color: "#fff",
+      fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+    }}>
+      {children}
+    </button>
+  );
+}
+
 // ── RunDetailView ──────────────────────────────────────────────────────────────
 
 function RunDetailView({ run, progress, onClose, onStartFresh, onResume, onPause, onStop }: {
@@ -476,8 +490,16 @@ function RunDetailView({ run, progress, onClose, onStartFresh, onResume, onPause
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [lines.length]);
 
-  // Build loss history from all progress log entries for the chart.
-  const lossHistory = useMemo(() => {
+  // Latest done/validation info.
+  const { done } = parseLog(lines);
+
+  const statusColor  = RUN_STATUS_COLORS[run.status];
+  const pct          = run.status === "done" ? 100 : progress ? Math.round((progress.epoch / progress.epochs) * 100) : 0;
+  const totalEpochs  = progress?.epochs ?? run.epochs;
+  const currentEpoch = progress?.epoch  ?? (run.status === "done" ? run.epochs : 0);
+
+  // Parse loss history, compute SVG polyline points and live dot in one pass.
+  const { chartPoints, liveDot } = useMemo(() => {
     const pts: Array<{ epoch: number; loss: number }> = [];
     for (const line of lines) {
       try {
@@ -485,31 +507,24 @@ function RunDetailView({ run, progress, onClose, onStartFresh, onResume, onPause
         if (ev.type === "progress" && ev.loss != null) pts.push({ epoch: ev.epoch, loss: ev.loss });
       } catch {}
     }
-    return pts;
-  }, [lines]);
+    if (pts.length < 2) return { chartPoints: "", liveDot: null as { cx: number; cy: number } | null };
 
-  // Latest done/validation info.
-  const { done } = parseLog(lines);
+    const maxE   = pts[pts.length - 1].epoch;
+    const losses = pts.map(d => d.loss);
+    const minL   = Math.min(...losses);
+    const rangeL = (Math.max(...losses) - minL) || 1;
+    const toXY   = (d: { epoch: number; loss: number }) => ({
+      x: (d.epoch / maxE) * 800,
+      y: 200 - ((d.loss - minL) / rangeL) * 160 - 20,
+    });
 
-  const statusColor = RUN_STATUS_COLORS[run.status];
-  const pct = progress ? Math.round((progress.epoch / progress.epochs) * 100) : (run.mAP != null ? 100 : 0);
-  const totalEpochs = progress?.epochs ?? run.epochs;
-  const currentEpoch = progress?.epoch ?? (run.mAP != null ? run.epochs : 0);
+    const points     = pts.map(toXY);
+    const chartPoints = points.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+    const last        = points[points.length - 1];
+    const liveDot     = run.status === "training" ? { cx: last.x, cy: last.y } : null;
 
-  // SVG chart: map loss values into 800×200 viewBox (20px padding top/bottom).
-  const chartPoints = useMemo(() => {
-    const data = lossHistory;
-    if (data.length < 2) return "";
-    const maxE = data[data.length - 1].epoch;
-    const minL = Math.min(...data.map(d => d.loss));
-    const maxL = Math.max(...data.map(d => d.loss));
-    const rangeL = maxL - minL || 1;
-    return data.map(d => {
-      const x = (d.epoch / maxE) * 800;
-      const y = 200 - ((d.loss - minL) / rangeL) * 160 - 20;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    }).join(" ");
-  }, [lossHistory]);
+    return { chartPoints, liveDot };
+  }, [lines, run.status]);
 
   // Validation metrics (from done, or latest progress).
   const mAP50    = done?.mAP50    ?? run.mAP    ?? progress?.mAP  ?? null;
@@ -541,41 +556,25 @@ function RunDetailView({ run, progress, onClose, onStartFresh, onResume, onPause
           {RUN_STATUS_LABELS[run.status]}
         </span>
         {(run.status === "idle" || run.status === "done" || run.status === "failed") && (
-          <button onClick={onStartFresh} style={{
-            display: "flex", alignItems: "center", gap: 6, padding: "6px 16px", borderRadius: 6,
-            border: "none", background: "var(--accent)", color: "#fff",
-            fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
-          }}>
+          <TopBarBtn onClick={onStartFresh} bg="var(--accent)">
             <Play size={13} fill="#fff" />
             {run.status === "idle" ? "Start" : run.status === "done" ? "Start Again" : "Retry"}
-          </button>
+          </TopBarBtn>
         )}
         {run.status === "paused" && (
-          <button onClick={onResume} style={{
-            display: "flex", alignItems: "center", gap: 6, padding: "6px 16px", borderRadius: 6,
-            border: "none", background: "#3B82F6", color: "#fff",
-            fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
-          }}>
+          <TopBarBtn onClick={onResume} bg="#3B82F6">
             <Play size={13} fill="#fff" /> Resume
-          </button>
+          </TopBarBtn>
         )}
         {run.status === "training" && (
-          <button onClick={onPause} style={{
-            display: "flex", alignItems: "center", gap: 6, padding: "6px 16px", borderRadius: 6,
-            border: "none", background: "#F97316", color: "#fff",
-            fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
-          }}>
+          <TopBarBtn onClick={onPause} bg="#F97316">
             <Pause size={13} fill="#fff" /> Pause
-          </button>
+          </TopBarBtn>
         )}
         {(run.status === "training" || run.status === "installing" || run.status === "paused") && (
-          <button onClick={onStop} style={{
-            display: "flex", alignItems: "center", gap: 6, padding: "6px 16px", borderRadius: 6,
-            border: "none", background: "#EF4444", color: "#fff",
-            fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
-          }}>
+          <TopBarBtn onClick={onStop} bg="#EF4444">
             <Square size={13} fill="#fff" /> Stop
-          </button>
+          </TopBarBtn>
         )}
       </div>
 
@@ -650,7 +649,7 @@ function RunDetailView({ run, progress, onClose, onStartFresh, onResume, onPause
                   <line key={y} x1="0" y1={y} x2="800" y2={y}
                     stroke="var(--border)" strokeWidth="1" />
                 ))}
-                {lossHistory.length >= 2 ? (
+                {chartPoints ? (
                   <polyline
                     fill="none"
                     stroke="#3B82F6"
@@ -659,23 +658,13 @@ function RunDetailView({ run, progress, onClose, onStartFresh, onResume, onPause
                     points={chartPoints}
                     vectorEffect="non-scaling-stroke"
                   />
-                ) : null}
-                {lossHistory.length < 2 && (
+                ) : (
                   <text x="400" y="100" textAnchor="middle" fill="var(--text-muted)"
                     fontSize="14" fontFamily="monospace">
                     {run.status === "idle" ? "Not started" : "Waiting for first epoch…"}
                   </text>
                 )}
-                {lossHistory.length >= 2 && run.status === "training" && (() => {
-                  const last = lossHistory[lossHistory.length - 1];
-                  const maxE = last.epoch;
-                  const minL = Math.min(...lossHistory.map(d => d.loss));
-                  const maxL = Math.max(...lossHistory.map(d => d.loss));
-                  const rangeL = maxL - minL || 1;
-                  const cx = (last.epoch / maxE) * 800;
-                  const cy = 200 - ((last.loss - minL) / rangeL) * 160 - 20;
-                  return <circle cx={cx} cy={cy} r="5" fill="#3B82F6" />;
-                })()}
+                {liveDot && <circle cx={liveDot.cx} cy={liveDot.cy} r="5" fill="#3B82F6" />}
               </svg>
               <div style={{ position: "absolute", bottom: 0, left: 0, fontSize: 9, color: "var(--text-muted)", fontFamily: "monospace" }}>Epoch 0</div>
               <div style={{ position: "absolute", bottom: 0, right: 0, fontSize: 9, color: "var(--text-muted)", fontFamily: "monospace" }}>Epoch {run.epochs}</div>
@@ -848,13 +837,13 @@ function NewRunModal({ assets, onClose, onCreate }: {
   const [outputEdited, setOutputEdited]     = useState(false);
   const [picking, setPicking]               = useState(false);
 
-  // Build merged class list (stable insertion order, deduplicated).
-  const classMap = [...new Map(
+  // Merged class list: stable insertion order, deduplicated, recomputed only when selection changes.
+  const classMap = useMemo(() => [...new Map(
     assets
       .filter(a => selectedAssets.includes(a.id))
       .flatMap(a => a.classes)
       .map(c => [c, c])
-  ).keys()];
+  ).keys()], [assets, selectedAssets]);
 
   function toggleAsset(id: string) {
     setSelectedAssets(prev => {

@@ -19,7 +19,7 @@ const VENV_PYTHON     = join(VENV_DIR, IS_WIN ? "Scripts/python.exe" : "bin/pyth
 const VENV_READY_MARKER = join(VENV_DIR, ".ready");
 
 /**
- * Returns [venvPython, trainScript].
+ * Ensures the Python environment is ready, then returns [venvPython, trainScript].
  *
  * On first call:
  *   1. Extracts the bundled Python runtime tarball → ~/.yolostudio/python-runtime/
@@ -27,35 +27,12 @@ const VENV_READY_MARKER = join(VENV_DIR, ".ready");
  *   3. pip-installs ultralytics into the venv
  *
  * Subsequent calls are instant (everything already exists).
- * Setup progress is written to the run's train.log so the UI terminal shows it.
+ * Each subprocess is registered under runId so stopTraining can kill it mid-setup.
  */
-async function getTrainCommand(logPath: string, runId: string): Promise<string[]> {
+async function prepareEnvironment(logPath: string, runId: string): Promise<string[]> {
 	const log = (text: string) =>
 		appendFile(logPath, JSON.stringify({ type: "stderr", text }) + "\n").catch(() => {});
 
-	// Streams one output pipe to the log, splitting on \n.
-	// pip uses \r to overwrite the progress line — each \n-terminated chunk may
-	// contain many \r-separated updates. We take only the LAST \r segment (the
-	// final/complete state of that line) so we get one clean log entry per line
-	// with no flooding. The final 100% line always ends with \n.
-	async function streamPipe(pipe: AsyncIterable<Uint8Array>): Promise<void> {
-		const decoder = new TextDecoder();
-		let buf = "";
-		for await (const chunk of pipe) {
-			buf += decoder.decode(chunk, { stream: true });
-			const lines = buf.split("\n");
-			buf = lines.pop() ?? "";
-			for (const line of lines) {
-				const clean = cleanLine(line);
-				if (clean) await log(clean);
-			}
-		}
-		const clean = cleanLine(buf);
-		if (clean) await log(clean);
-	}
-
-	// Runs a command, registers it in runningProcesses so stopTraining can kill
-	// it even during setup (e.g. while pip is downloading).
 	async function run(cmd: string[], label: string): Promise<void> {
 		const proc = Bun.spawn(cmd, {
 			stdout: "pipe",
@@ -64,14 +41,11 @@ async function getTrainCommand(logPath: string, runId: string): Promise<string[]
 		});
 
 		runningProcesses.set(runId, proc);
-
 		try {
-			// Stream both pipes concurrently so nothing is missed.
 			await Promise.all([
-				streamPipe(proc.stdout).catch(() => {}),
-				streamPipe(proc.stderr).catch(() => {}),
+				pipeLines(proc.stdout, log).catch(() => {}),
+				pipeLines(proc.stderr, log).catch(() => {}),
 			]);
-
 			const code = await proc.exited;
 			if (code !== 0) {
 				await log(`[setup] ✗ ${label} failed (exit ${code})`);
@@ -82,7 +56,6 @@ async function getTrainCommand(logPath: string, runId: string): Promise<string[]
 		}
 	}
 
-	// ── 1. Extract bundled Python runtime ─────────────────────────────────────
 	if (!(await Bun.file(RUNTIME_PYTHON).exists())) {
 		await log("[setup] Extracting bundled Python runtime…");
 		await mkdir(RUNTIME_DIR, { recursive: true });
@@ -90,19 +63,15 @@ async function getTrainCommand(logPath: string, runId: string): Promise<string[]
 		await log("[setup] Python runtime ready.");
 	}
 
-	// ── 2. Create virtualenv + install ultralytics ────────────────────────────
-	// Guard on .ready marker (not just venv existence) so a failed pip install
-	// doesn't leave us with a broken venv that skips reinstallation next time.
+	// Guard on .ready marker so a failed pip install retries rather than skipping.
 	if (!(await Bun.file(VENV_READY_MARKER).exists())) {
 		await log("[setup] Creating virtual environment at ~/.yolostudio/venv…");
 		await run([RUNTIME_PYTHON, "-m", "venv", "--clear", VENV_DIR], "venv create");
 		await log("[setup] Virtual environment created.");
 
-		// ── 3. Install ultralytics ─────────────────────────────────────────────
 		await log("[setup] Installing ultralytics (first run only — may take a few minutes)…");
 		await run([VENV_PYTHON, "-m", "pip", "install", "ultralytics"], "pip install");
 
-		// Only written on success — partial installs retry on next attempt.
 		await Bun.write(VENV_READY_MARKER, "ready");
 		await log("[setup] Environment ready. Starting training…");
 	}
@@ -110,11 +79,39 @@ async function getTrainCommand(logPath: string, runId: string): Promise<string[]
 	return [VENV_PYTHON, TRAIN_SCRIPT];
 }
 
+// ── standalone helpers ─────────────────────────────────────────────────────────
+
 // Strip all ANSI/CSI escape sequences (\x1b[K erase-line, \x1b[1m bold, etc.)
-// and take the last \r-overwritten segment so progress bars collapse to one line.
+// and collapse \r-overwritten progress lines to their final state.
 function cleanLine(raw: string): string {
 	const segments = raw.split("\r");
 	return segments[segments.length - 1].replace(/\x1b\[[0-9;]*[A-Za-z]/g, "").trim();
+}
+
+// Buffer a byte pipe, split on \n, clean each line, and call onLine per entry.
+// Single implementation used by both setup (pip) and training (ultralytics) output.
+async function pipeLines(
+	pipe: AsyncIterable<Uint8Array>,
+	onLine: (line: string) => Promise<void>,
+): Promise<void> {
+	const decoder = new TextDecoder();
+	let buf = "";
+	for await (const chunk of pipe) {
+		buf += decoder.decode(chunk, { stream: true });
+		const lines = buf.split("\n");
+		buf = lines.pop() ?? "";
+		for (const line of lines) {
+			const clean = cleanLine(line);
+			if (clean) await onLine(clean);
+		}
+	}
+	const clean = cleanLine(buf);
+	if (clean) await onLine(clean);
+}
+
+// Canonical path to the YOLO training checkpoint for a given output directory.
+function checkpointPath(outputPath: string): string {
+	return join(outputPath, "weights", "weights", "last.pt");
 }
 
 // Tracks active training subprocesses keyed by run ID.
@@ -147,18 +144,14 @@ const server = Bun.serve({
 // ── recursive image collector ─────────────────────────────────────────────────
 
 async function collectImagePaths(dir: string): Promise<string[]> {
-	const paths: string[] = [];
 	const entries = await readdir(dir, { withFileTypes: true });
-	await Promise.all(entries.map(async entry => {
+	const results = await Promise.all(entries.map(async entry => {
 		const fullPath = join(dir, entry.name);
-		if (entry.isDirectory()) {
-			const sub = await collectImagePaths(fullPath);
-			for (const p of sub) paths.push(p);
-		} else if (IMAGE_EXTS.has(extname(entry.name).toLowerCase())) {
-			paths.push(fullPath);
-		}
+		if (entry.isDirectory()) return collectImagePaths(fullPath);
+		if (IMAGE_EXTS.has(extname(entry.name).toLowerCase())) return [fullPath];
+		return [];
 	}));
-	return paths;
+	return results.flat();
 }
 
 // ── RPC ───────────────────────────────────────────────────────────────────────
@@ -326,22 +319,17 @@ const rpc = defineElectrobunRPC("bun", {
 			}) => {
 				await mkdir(config.outputPath, { recursive: true });
 
-				// fresh=true → discard checkpoint and previous log so everything resets.
 				if (config.fresh) {
-					const checkpoint = join(config.outputPath, "weights", "weights", "last.pt");
-					await unlink(checkpoint).catch(() => {});
-					const oldLog = join(config.outputPath, "train.log");
-					await unlink(oldLog).catch(() => {});
+					await unlink(checkpointPath(config.outputPath)).catch(() => {});
+					await unlink(join(config.outputPath, "train.log")).catch(() => {});
 				}
 
 				const logPath = join(config.outputPath, "train.log");
-
-				// Write start entry to log.
 				await appendFile(logPath, JSON.stringify({
 					type: "start", timestamp: new Date().toISOString(), config,
 				}) + "\n");
 
-				const trainCmd = await getTrainCommand(logPath, config.id);
+				const trainCmd = await prepareEnvironment(logPath, config.id);
 				const proc = Bun.spawn(trainCmd, {
 					stdin:  "pipe",
 					stdout: "pipe",
@@ -354,47 +342,15 @@ const rpc = defineElectrobunRPC("bun", {
 				proc.stdin.write(JSON.stringify(config));
 				proc.stdin.end();
 
-				// Stream stdout → log file (fire-and-forget).
-				// stdout is newline-delimited JSON from train.py — no \r progress bars,
-				// but still strip ANSI in case ultralytics adds any colour codes.
-				(async () => {
-					const decoder = new TextDecoder();
-					let   buffer  = "";
-					for await (const chunk of proc.stdout) {
-						buffer += decoder.decode(chunk, { stream: true });
-						const lines = buffer.split("\n");
-						buffer = lines.pop() ?? "";
-						for (const line of lines) {
-							const clean = cleanLine(line);
-							if (clean) await appendFile(logPath, clean + "\n").catch(console.error);
-						}
-					}
-					const clean = cleanLine(buffer);
-					if (clean) await appendFile(logPath, clean + "\n").catch(console.error);
-					runningProcesses.delete(config.id);
-				})().catch(console.error);
+				// stdout: newline-delimited JSON from train.py (progress/done/error).
+				pipeLines(proc.stdout, line =>
+					appendFile(logPath, line + "\n").catch(console.error)
+				).then(() => runningProcesses.delete(config.id)).catch(console.error);
 
-				// Stream stderr → log file as typed entries.
-				// Ultralytics writes progress bars (\r, \x1b[K) to stderr — clean them.
-				(async () => {
-					const decoder = new TextDecoder();
-					let   buffer  = "";
-					for await (const chunk of proc.stderr) {
-						buffer += decoder.decode(chunk, { stream: true });
-						const lines = buffer.split("\n");
-						buffer = lines.pop() ?? "";
-						for (const line of lines) {
-							const text = cleanLine(line);
-							if (text) await appendFile(logPath,
-								JSON.stringify({ type: "stderr", text }) + "\n"
-							).catch(console.error);
-						}
-					}
-					const text = cleanLine(buffer);
-					if (text) await appendFile(logPath,
-						JSON.stringify({ type: "stderr", text }) + "\n"
-					).catch(console.error);
-				})().catch(console.error);
+				// stderr: ultralytics status + progress bars — wrap as typed log entries.
+				pipeLines(proc.stderr, text =>
+					appendFile(logPath, JSON.stringify({ type: "stderr", text }) + "\n").catch(console.error)
+				).catch(console.error);
 
 				return { started: true };
 			},
@@ -418,9 +374,8 @@ const rpc = defineElectrobunRPC("bun", {
 					proc.kill(9); // SIGKILL — guaranteed termination regardless of pip/torch state
 					runningProcesses.delete(runId);
 				}
-				// clearCheckpoint=true → discard checkpoint AND log so next Start is fully fresh.
 				if (clearCheckpoint && outputPath) {
-					await unlink(join(outputPath, "weights", "weights", "last.pt")).catch(() => {});
+					await unlink(checkpointPath(outputPath)).catch(() => {});
 					await unlink(join(outputPath, "train.log")).catch(() => {});
 				}
 				return {};
