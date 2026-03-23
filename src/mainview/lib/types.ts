@@ -14,7 +14,7 @@ export interface Asset {
   thumbnailColor: string;
 }
 
-export type RunStatus = "idle" | "installing" | "training" | "done" | "failed";
+export type RunStatus = "idle" | "installing" | "training" | "paused" | "done" | "failed";
 
 export interface TrainingRun {
   id: string;

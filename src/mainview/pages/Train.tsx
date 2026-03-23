@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { Plus, FolderOpen, Cpu, Play, Square, Trash2, ChevronLeft, Terminal } from "lucide-react";
+import { Plus, FolderOpen, Cpu, Play, Pause, Square, Trash2, ChevronLeft, Terminal } from "lucide-react";
 import { type TrainingRun, type Asset } from "../lib/types";
 import { RUN_STATUS_LABELS, RUN_STATUS_COLORS, BASE_MODELS, DEVICES, CLASS_COLORS } from "../lib/constants";
 import { getRPC } from "../lib/rpc";
@@ -88,12 +88,17 @@ export default function Train({ assets, runs, onRunsChange }: Props) {
     setShowModal(false);
   }
 
-  async function handleStart(run: TrainingRun) {
+  async function handleStart(run: TrainingRun, fresh: boolean) {
     // Show "installing" immediately — setup (venv + pip install ultralytics) can
     // take several minutes on first run. Flips to "training" once RPC returns.
     onRunsChange(runs.map(r =>
-      r.id === run.id ? { ...r, status: "installing" as const, updatedAt: "just now" } : r
+      r.id === run.id ? { ...r, status: "installing" as const, mAP: undefined, updatedAt: "just now" } : r
     ));
+
+    // Clear stale progress so the chart and epoch counter reset immediately.
+    if (fresh) {
+      setRunProgress(prev => { const next = { ...prev }; delete next[run.id]; return next; });
+    }
 
     const runAssets = assets.filter(a => run.assetIds.includes(a.id));
     try {
@@ -108,6 +113,7 @@ export default function Train({ assets, runs, onRunsChange }: Props) {
         imgsz:      run.imgsz,
         device:     run.device,
         outputPath: run.outputPath,
+        fresh,
       });
       // Setup done — YOLO training is now actually running.
       onRunsChange(runsRef.current.map(r =>
@@ -115,16 +121,32 @@ export default function Train({ assets, runs, onRunsChange }: Props) {
       ));
     } catch (err) {
       console.error("Failed to start training:", err);
-      // Revert status if the RPC itself threw.
-      onRunsChange(runs.map(r =>
-        r.id === run.id ? { ...r, status: "failed" as const, updatedAt: "just now" } : r
+      // Only set to failed if still in an active state — the user may have clicked
+      // Stop/Pause while setup was running, which already updated the status.
+      onRunsChange(runsRef.current.map(r =>
+        r.id === run.id && (r.status === "installing" || r.status === "training")
+          ? { ...r, status: "failed" as const, updatedAt: "just now" }
+          : r
       ));
     }
   }
 
-  async function handleStop(run: TrainingRun) {
+  // Pause: kill process, keep last.pt checkpoint → user can Resume later.
+  async function handlePause(run: TrainingRun) {
     try {
       await getRPC().request.stopTraining({ runId: run.id });
+      onRunsChange(runs.map(r =>
+        r.id === run.id ? { ...r, status: "paused" as const, updatedAt: "just now" } : r
+      ));
+    } catch (err) {
+      console.error("Failed to pause training:", err);
+    }
+  }
+
+  // Stop: kill process + clear checkpoint → next Start is always from scratch.
+  async function handleStop(run: TrainingRun) {
+    try {
+      await getRPC().request.stopTraining({ runId: run.id, clearCheckpoint: true, outputPath: run.outputPath });
       onRunsChange(runs.map(r =>
         r.id === run.id ? { ...r, status: "idle" as const, updatedAt: "just now" } : r
       ));
@@ -142,7 +164,9 @@ export default function Train({ assets, runs, onRunsChange }: Props) {
         run={liveRun}
         progress={runProgress[detailRun.id]}
         onClose={() => setDetailRun(null)}
-        onStart={() => handleStart(liveRun)}
+        onStartFresh={() => handleStart(liveRun, true)}
+        onResume={() => handleStart(liveRun, false)}
+        onPause={() => handlePause(liveRun)}
         onStop={() => handleStop(liveRun)}
       />
     );
@@ -187,7 +211,9 @@ export default function Train({ assets, runs, onRunsChange }: Props) {
               assets={assets}
               progress={runProgress[run.id]}
               onClick={() => setDetailRun(run)}
-              onStart={() => handleStart(run)}
+              onStartFresh={() => handleStart(run, true)}
+              onResume={() => handleStart(run, false)}
+              onPause={() => handlePause(run)}
               onStop={() => handleStop(run)}
               onDelete={() => onRunsChange(runs.filter(r => r.id !== run.id))}
             />
@@ -231,12 +257,14 @@ interface RunCardProps {
   assets: Asset[];
   progress?: LogProgress;
   onClick: () => void;
-  onStart: () => void;
+  onStartFresh: () => void;
+  onResume: () => void;
+  onPause: () => void;
   onStop: () => void;
   onDelete: () => void;
 }
 
-function RunCard({ run, assets, progress, onClick, onStart, onStop, onDelete }: RunCardProps) {
+function RunCard({ run, assets, progress, onClick, onStartFresh, onResume, onPause, onStop, onDelete }: RunCardProps) {
   const statusColor = RUN_STATUS_COLORS[run.status];
   const statusLabel = RUN_STATUS_LABELS[run.status];
   const runAssets   = assets.filter(a => run.assetIds.includes(a.id));
@@ -273,11 +301,22 @@ function RunCard({ run, assets, progress, onClick, onStart, onStop, onDelete }: 
             {run.name}
           </h3>
           <div style={{ display: "flex", gap: 4, marginLeft: 8, flexShrink: 0 }}>
-            {(run.status === "idle" || run.status === "failed") && (
-              <ActionBtn Icon={Play} color="var(--accent)" title="Start training" onClick={onStart} />
+            {(run.status === "idle" || run.status === "done" || run.status === "failed") && (
+              <ActionBtn Icon={Play} color="var(--accent)"
+                title={run.status === "idle" ? "Start" : run.status === "done" ? "Start again" : "Retry"}
+                onClick={onStartFresh} />
             )}
-            {(run.status === "installing" || run.status === "training") && (
-              <ActionBtn Icon={Square} color="#EF4444" title="Stop" onClick={onStop} />
+            {run.status === "paused" && (
+              <ActionBtn Icon={Play} color="#3B82F6" title="Resume" onClick={onResume} />
+            )}
+            {run.status === "paused" && (
+              <ActionBtn Icon={Square} color="#EF4444" title="Stop (discard checkpoint)" onClick={onStop} />
+            )}
+            {run.status === "training" && (
+              <ActionBtn Icon={Pause} color="#F97316" title="Pause" onClick={onPause} />
+            )}
+            {(run.status === "training" || run.status === "installing") && (
+              <ActionBtn Icon={Square} color="#EF4444" title="Stop (discard checkpoint)" onClick={onStop} />
             )}
             {(run.status === "idle" || run.status === "done" || run.status === "failed") && (
               <ActionBtn Icon={Trash2} color="var(--text-muted)" title="Delete run" onClick={onDelete} danger />
@@ -406,11 +445,13 @@ function ActionBtn({ Icon, color, title, onClick, danger }: {
 
 // ── RunDetailView ──────────────────────────────────────────────────────────────
 
-function RunDetailView({ run, progress, onClose, onStart, onStop }: {
+function RunDetailView({ run, progress, onClose, onStartFresh, onResume, onPause, onStop }: {
   run: TrainingRun;
   progress?: LogProgress;
   onClose: () => void;
-  onStart: () => void;
+  onStartFresh: () => void;
+  onResume: () => void;
+  onPause: () => void;
   onStop: () => void;
 }) {
   const [lines, setLines] = useState<string[]>([]);
@@ -499,27 +540,40 @@ function RunDetailView({ run, progress, onClose, onStart, onStop }: {
         }}>
           {RUN_STATUS_LABELS[run.status]}
         </span>
-        {(run.status === "idle" || run.status === "failed") && (
-          <button
-            onClick={onStart}
-            style={{
-              display: "flex", alignItems: "center", gap: 6, padding: "6px 16px", borderRadius: 6,
-              border: "none", background: "var(--accent)", color: "#fff",
-              fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
-            }}
-          >
-            <Play size={13} fill="#fff" /> {run.status === "failed" ? "Retry" : "Start Training"}
+        {(run.status === "idle" || run.status === "done" || run.status === "failed") && (
+          <button onClick={onStartFresh} style={{
+            display: "flex", alignItems: "center", gap: 6, padding: "6px 16px", borderRadius: 6,
+            border: "none", background: "var(--accent)", color: "#fff",
+            fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+          }}>
+            <Play size={13} fill="#fff" />
+            {run.status === "idle" ? "Start" : run.status === "done" ? "Start Again" : "Retry"}
           </button>
         )}
-        {(run.status === "installing" || run.status === "training") && (
-          <button
-            onClick={onStop}
-            style={{
-              display: "flex", alignItems: "center", gap: 6, padding: "6px 16px", borderRadius: 6,
-              border: "none", background: "#EF4444", color: "#fff",
-              fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
-            }}
-          >
+        {run.status === "paused" && (
+          <button onClick={onResume} style={{
+            display: "flex", alignItems: "center", gap: 6, padding: "6px 16px", borderRadius: 6,
+            border: "none", background: "#3B82F6", color: "#fff",
+            fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+          }}>
+            <Play size={13} fill="#fff" /> Resume
+          </button>
+        )}
+        {run.status === "training" && (
+          <button onClick={onPause} style={{
+            display: "flex", alignItems: "center", gap: 6, padding: "6px 16px", borderRadius: 6,
+            border: "none", background: "#F97316", color: "#fff",
+            fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+          }}>
+            <Pause size={13} fill="#fff" /> Pause
+          </button>
+        )}
+        {(run.status === "training" || run.status === "installing" || run.status === "paused") && (
+          <button onClick={onStop} style={{
+            display: "flex", alignItems: "center", gap: 6, padding: "6px 16px", borderRadius: 6,
+            border: "none", background: "#EF4444", color: "#fff",
+            fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+          }}>
             <Square size={13} fill="#fff" /> Stop
           </button>
         )}
@@ -558,6 +612,9 @@ function RunDetailView({ run, progress, onClose, onStart, onStop }: {
               {(run.status === "installing" || run.status === "training") && (
                 <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--accent)", display: "inline-block", animation: "pulse 1.5s infinite" }} />
               )}
+              {run.status === "paused" && (
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#3B82F6", display: "inline-block" }} />
+              )}
               <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--text)" }}>
                 Live Network Loss
               </span>
@@ -567,6 +624,14 @@ function RunDetailView({ run, progress, onClose, onStart, onStop }: {
                   color: "var(--accent)", fontSize: 10, padding: "1px 7px", borderRadius: 3, fontFamily: "monospace",
                 }}>
                   Training…
+                </span>
+              )}
+              {run.status === "paused" && (
+                <span style={{
+                  background: "var(--surface-2)", border: "1px solid #3B82F633",
+                  color: "#3B82F6", fontSize: 10, padding: "1px 7px", borderRadius: 3, fontFamily: "monospace",
+                }}>
+                  Paused
                 </span>
               )}
             </div>

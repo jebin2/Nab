@@ -15,6 +15,7 @@ export const RUN_STATUS_LABELS: Record<RunStatus, string> = {
   idle:       "Idle",
   installing: "Installing",
   training:   "Training",
+  paused:     "Paused",
   done:       "Done",
   failed:     "Failed",
 };
@@ -23,6 +24,7 @@ export const RUN_STATUS_COLORS: Record<RunStatus, string> = {
   idle:       "#6B7280",
   installing: "#A855F7",
   training:   "#F97316",
+  paused:     "#3B82F6",
   done:       "#22C55E",
   failed:     "#EF4444",
 };

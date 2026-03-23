@@ -139,18 +139,25 @@ def main():
         emit({"type": "error", "message": f"Failed to build dataset: {e}"})
         sys.exit(1)
 
-    # Load model — Ultralytics auto-downloads pretrained weights.
+    # Check for a checkpoint from a previous paused run — resume if found.
+    checkpoint = output_path / "weights" / "weights" / "last.pt"
+    resuming   = checkpoint.exists()
+
     try:
         from ultralytics import YOLO
-        model = YOLO(f"{base_model}.pt")
+        if resuming:
+            emit({"type": "stderr", "text": f"[train] Resuming from checkpoint: {checkpoint}"})
+            model = YOLO(str(checkpoint))
+        else:
+            model = YOLO(f"{base_model}.pt")
     except Exception as e:
-        emit({"type": "error", "message": f"Failed to load model {base_model}: {e}"})
+        emit({"type": "error", "message": f"Failed to load model: {e}"})
         sys.exit(1)
 
     # Register epoch callback.
     model.add_callback("on_train_epoch_end", make_on_train_epoch_end(epochs))
 
-    # Train.
+    # Train (or resume).
     try:
         results = model.train(
             data      = str(data_yaml),
@@ -161,6 +168,7 @@ def main():
             project   = str(output_path),
             name      = "weights",
             exist_ok  = True,
+            resume    = resuming,
             verbose   = False,
         )
     except Exception as e:

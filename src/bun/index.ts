@@ -1,5 +1,5 @@
 import Electrobun, { BrowserWindow, defineElectrobunRPC } from "electrobun/bun";
-import { readdir, mkdir, copyFile, appendFile } from "fs/promises";
+import { readdir, mkdir, copyFile, appendFile, unlink } from "fs/promises";
 import { join, extname, basename } from "path";
 import { randomBytes } from "crypto";
 import { homedir } from "os";
@@ -29,14 +29,15 @@ const VENV_READY_MARKER = join(VENV_DIR, ".ready");
  * Subsequent calls are instant (everything already exists).
  * Setup progress is written to the run's train.log so the UI terminal shows it.
  */
-async function getTrainCommand(logPath: string): Promise<string[]> {
+async function getTrainCommand(logPath: string, runId: string): Promise<string[]> {
 	const log = (text: string) =>
 		appendFile(logPath, JSON.stringify({ type: "stderr", text }) + "\n").catch(() => {});
 
-	// Streams one output pipe to the log, splitting on \n only.
-	// pip uses \r for byte-by-byte progress — splitting on \r would write
-	// thousands of entries for a 900MB download and stall the stream.
-	// The "Downloading X.whl (915 MB)" and "Installing..." lines all end with \n.
+	// Streams one output pipe to the log, splitting on \n.
+	// pip uses \r to overwrite the progress line — each \n-terminated chunk may
+	// contain many \r-separated updates. We take only the LAST \r segment (the
+	// final/complete state of that line) so we get one clean log entry per line
+	// with no flooding. The final 100% line always ends with \n.
 	async function streamPipe(pipe: AsyncIterable<Uint8Array>): Promise<void> {
 		const decoder = new TextDecoder();
 		let buf = "";
@@ -45,16 +46,16 @@ async function getTrainCommand(logPath: string): Promise<string[]> {
 			const lines = buf.split("\n");
 			buf = lines.pop() ?? "";
 			for (const line of lines) {
-				// Strip \r leftover and ANSI codes before logging.
-				const clean = line.replace(/\r/g, "").replace(/\x1b\[[0-9;]*m/g, "").trim();
+				const clean = cleanLine(line);
 				if (clean) await log(clean);
 			}
 		}
-		const clean = buf.replace(/\r/g, "").replace(/\x1b\[[0-9;]*m/g, "").trim();
+		const clean = cleanLine(buf);
 		if (clean) await log(clean);
 	}
 
-	// Runs a command, streams both stdout+stderr to the log, checks exit code.
+	// Runs a command, registers it in runningProcesses so stopTraining can kill
+	// it even during setup (e.g. while pip is downloading).
 	async function run(cmd: string[], label: string): Promise<void> {
 		const proc = Bun.spawn(cmd, {
 			stdout: "pipe",
@@ -62,16 +63,22 @@ async function getTrainCommand(logPath: string): Promise<string[]> {
 			env: { ...process.env, PYTHONUNBUFFERED: "1" },
 		});
 
-		// Stream both pipes concurrently so nothing is missed.
-		await Promise.all([
-			streamPipe(proc.stdout).catch(() => {}),
-			streamPipe(proc.stderr).catch(() => {}),
-		]);
+		runningProcesses.set(runId, proc);
 
-		const code = await proc.exited;
-		if (code !== 0) {
-			await log(`[setup] ✗ ${label} failed (exit ${code})`);
-			throw new Error(`${label} failed with exit code ${code}`);
+		try {
+			// Stream both pipes concurrently so nothing is missed.
+			await Promise.all([
+				streamPipe(proc.stdout).catch(() => {}),
+				streamPipe(proc.stderr).catch(() => {}),
+			]);
+
+			const code = await proc.exited;
+			if (code !== 0) {
+				await log(`[setup] ✗ ${label} failed (exit ${code})`);
+				throw new Error(`${label} failed with exit code ${code}`);
+			}
+		} finally {
+			runningProcesses.delete(runId);
 		}
 	}
 
@@ -101,6 +108,13 @@ async function getTrainCommand(logPath: string): Promise<string[]> {
 	}
 
 	return [VENV_PYTHON, TRAIN_SCRIPT];
+}
+
+// Strip all ANSI/CSI escape sequences (\x1b[K erase-line, \x1b[1m bold, etc.)
+// and take the last \r-overwritten segment so progress bars collapse to one line.
+function cleanLine(raw: string): string {
+	const segments = raw.split("\r");
+	return segments[segments.length - 1].replace(/\x1b\[[0-9;]*[A-Za-z]/g, "").trim();
 }
 
 // Tracks active training subprocesses keyed by run ID.
@@ -174,7 +188,20 @@ const rpc = defineElectrobunRPC("bun", {
 				const studioFile = join(homedir(), ".yolostudio", "studio.json");
 				try {
 					const file = Bun.file(studioFile);
-					if (await file.exists()) return JSON.parse(await file.text());
+					if (await file.exists()) {
+						const data = JSON.parse(await file.text());
+						// Processes don't survive app restarts — reset any active run to
+						// "paused" so the user sees a Resume button instead of a stuck
+						// "Training" badge with no live process behind it.
+						if (Array.isArray(data.runs)) {
+							data.runs = data.runs.map((r: { status: string }) =>
+								r.status === "training" || r.status === "installing"
+									? { ...r, status: "paused" }
+									: r
+							);
+						}
+						return data;
+					}
 				} catch (err) {
 					console.error("Failed to parse studio.json:", err);
 				}
@@ -295,9 +322,18 @@ const rpc = defineElectrobunRPC("bun", {
 			startTraining: async (config: {
 				id: string; name: string; assetPaths: string[]; classMap: string[];
 				baseModel: string; epochs: number; batchSize: number; imgsz: number;
-				device: string; outputPath: string;
+				device: string; outputPath: string; fresh: boolean;
 			}) => {
 				await mkdir(config.outputPath, { recursive: true });
+
+				// fresh=true → discard checkpoint and previous log so everything resets.
+				if (config.fresh) {
+					const checkpoint = join(config.outputPath, "weights", "weights", "last.pt");
+					await unlink(checkpoint).catch(() => {});
+					const oldLog = join(config.outputPath, "train.log");
+					await unlink(oldLog).catch(() => {});
+				}
+
 				const logPath = join(config.outputPath, "train.log");
 
 				// Write start entry to log.
@@ -305,7 +341,7 @@ const rpc = defineElectrobunRPC("bun", {
 					type: "start", timestamp: new Date().toISOString(), config,
 				}) + "\n");
 
-				const trainCmd = await getTrainCommand(logPath);
+				const trainCmd = await getTrainCommand(logPath, config.id);
 				const proc = Bun.spawn(trainCmd, {
 					stdin:  "pipe",
 					stdout: "pipe",
@@ -319,6 +355,8 @@ const rpc = defineElectrobunRPC("bun", {
 				proc.stdin.end();
 
 				// Stream stdout → log file (fire-and-forget).
+				// stdout is newline-delimited JSON from train.py — no \r progress bars,
+				// but still strip ANSI in case ultralytics adds any colour codes.
 				(async () => {
 					const decoder = new TextDecoder();
 					let   buffer  = "";
@@ -327,23 +365,35 @@ const rpc = defineElectrobunRPC("bun", {
 						const lines = buffer.split("\n");
 						buffer = lines.pop() ?? "";
 						for (const line of lines) {
-							if (!line.trim()) continue;
-							await appendFile(logPath, line + "\n").catch(console.error);
+							const clean = cleanLine(line);
+							if (clean) await appendFile(logPath, clean + "\n").catch(console.error);
 						}
 					}
-					if (buffer.trim()) await appendFile(logPath, buffer + "\n").catch(console.error);
+					const clean = cleanLine(buffer);
+					if (clean) await appendFile(logPath, clean + "\n").catch(console.error);
 					runningProcesses.delete(config.id);
 				})().catch(console.error);
 
 				// Stream stderr → log file as typed entries.
+				// Ultralytics writes progress bars (\r, \x1b[K) to stderr — clean them.
 				(async () => {
 					const decoder = new TextDecoder();
+					let   buffer  = "";
 					for await (const chunk of proc.stderr) {
-						const text = decoder.decode(chunk).trim();
-						if (text) await appendFile(logPath,
-							JSON.stringify({ type: "stderr", text }) + "\n"
-						).catch(console.error);
+						buffer += decoder.decode(chunk, { stream: true });
+						const lines = buffer.split("\n");
+						buffer = lines.pop() ?? "";
+						for (const line of lines) {
+							const text = cleanLine(line);
+							if (text) await appendFile(logPath,
+								JSON.stringify({ type: "stderr", text }) + "\n"
+							).catch(console.error);
+						}
 					}
+					const text = cleanLine(buffer);
+					if (text) await appendFile(logPath,
+						JSON.stringify({ type: "stderr", text }) + "\n"
+					).catch(console.error);
 				})().catch(console.error);
 
 				return { started: true };
@@ -360,11 +410,18 @@ const rpc = defineElectrobunRPC("bun", {
 				}
 			},
 
-			stopTraining: async ({ runId }: { runId: string }) => {
+			stopTraining: async ({ runId, clearCheckpoint, outputPath }: {
+				runId: string; clearCheckpoint?: boolean; outputPath?: string;
+			}) => {
 				const proc = runningProcesses.get(runId);
 				if (proc) {
-					proc.kill();
+					proc.kill(9); // SIGKILL — guaranteed termination regardless of pip/torch state
 					runningProcesses.delete(runId);
+				}
+				// clearCheckpoint=true → discard checkpoint AND log so next Start is fully fresh.
+				if (clearCheckpoint && outputPath) {
+					await unlink(join(outputPath, "weights", "weights", "last.pt")).catch(() => {});
+					await unlink(join(outputPath, "train.log")).catch(() => {});
 				}
 				return {};
 			},
