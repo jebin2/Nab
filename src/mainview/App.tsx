@@ -1,5 +1,6 @@
 import { useState } from "react";
-import Sidebar, { type NavPage } from "./components/Sidebar";
+import Sidebar from "./components/Sidebar";
+import { type NavPage } from "./lib/types";
 import NewProjectModal from "./components/NewProjectModal";
 import Dashboard from "./pages/Dashboard";
 import Annotate from "./pages/Annotate";

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Plus, MoreHorizontal } from "lucide-react";
-import { MOCK_PROJECTS, STATUS_LABELS, STATUS_COLORS, CLASS_COLORS, type Project, type ProjectStatus } from "../lib/constants";
+import { type Project, type ProjectStatus } from "../lib/types";
+import { MOCK_PROJECTS, STATUS_LABELS, STATUS_COLORS, CLASS_COLORS } from "../lib/constants";
 
 const FILTER_TABS: { id: "all" | ProjectStatus; label: string }[] = [
   { id: "all",        label: "All" },

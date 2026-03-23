@@ -20,8 +20,70 @@ export interface CanvasHandle {
   zoomOut:  () => void;
 }
 
-const HANDLE_RADIUS = 6;
-const MIN_BOX_PX    = 10;
+// ── constants ─────────────────────────────────────────────────────────────────
+
+const HANDLE_RADIUS  = 6;
+const MIN_BOX_PX     = 10;
+const CANVAS_BG      = "#111111";
+const ZOOM_MIN       = 0.1;
+const ZOOM_MAX       = 10;
+const ZOOM_WHEEL_IN  = 1.1;
+const ZOOM_BTN       = 1.25;
+
+// ── pure utilities (no component state) ──────────────────────────────────────
+
+function clamp01(v: number) {
+  return Math.max(0, Math.min(1, v));
+}
+
+function drawBox(
+  ctx: CanvasRenderingContext2D,
+  rect: { x: number; y: number; w: number; h: number },
+  color: string,
+  label: string,
+  isSelected: boolean,
+) {
+  const { x, y, w, h } = rect;
+
+  ctx.fillStyle = color + "18";
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = isSelected ? 2 : 1.5;
+  ctx.setLineDash([]);
+  ctx.strokeRect(x, y, w, h);
+
+  // label pill
+  ctx.font = "bold 11px Inter, system-ui, sans-serif";
+  const pillW = ctx.measureText(label).width + 12;
+  const pillH = 18;
+  const px = x;
+  const py = y - pillH - 2 < 0 ? y + 2 : y - pillH - 2;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.roundRect(px, py, pillW, pillH, 3);
+  ctx.fill();
+  ctx.fillStyle = "#fff";
+  ctx.fillText(label, px + 6, py + 12);
+
+  // corner handles when selected
+  if (isSelected) {
+    const corners = [
+      { x, y }, { x: x + w, y },
+      { x, y: y + h }, { x: x + w, y: y + h },
+    ];
+    for (const c of corners) {
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, HANDLE_RADIUS, 0, Math.PI * 2);
+      ctx.fillStyle = "#fff";
+      ctx.fill();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+  }
+}
+
+// ── component ─────────────────────────────────────────────────────────────────
 
 const AnnotationCanvas = forwardRef<CanvasHandle, Props>(function AnnotationCanvas(
   { tool, classes, activeClassIndex, annotations, selectedId, imageSrc,
@@ -37,37 +99,43 @@ const AnnotationCanvas = forwardRef<CanvasHandle, Props>(function AnnotationCanv
   const scaleRef  = useRef(1);
   const offsetRef = useRef({ x: 0, y: 0 });
 
-  // drawing (box tool)
+  // box drawing state
   const isDrawingRef = useRef(false);
   const drawStartRef = useRef({ x: 0, y: 0 });
   const drawEndRef   = useRef({ x: 0, y: 0 });
 
   // hand tool drag state
-  const dragModeRef      = useRef<"none" | "pan" | "move" | "resize">("none");
-  const dragStartPosRef  = useRef({ x: 0, y: 0 });
-  const dragAnnIdRef     = useRef<string | null>(null);
-  const dragAnnOrigRef   = useRef<BBox | null>(null);
-  const resizeCornerRef  = useRef<number>(0);
-  const previewAnnRef    = useRef<BBox | null>(null);
+  const dragModeRef     = useRef<"none" | "pan" | "move" | "resize">("none");
+  const dragStartPosRef = useRef({ x: 0, y: 0 });
+  const dragAnnIdRef    = useRef<string | null>(null);
+  const dragAnnOrigRef  = useRef<BBox | null>(null);
+  const resizeCornerRef = useRef<number>(0);
+  const previewAnnRef   = useRef<BBox | null>(null);
 
   const spaceDownRef = useRef(false);
 
-  // stable prop refs
+  // ── stable prop refs (avoid re-attaching listeners on every parent render) ──
   const annotationsRef      = useRef(annotations);
   const selectedIdRef       = useRef(selectedId);
   const toolRef             = useRef(tool);
   const classesRef          = useRef(classes);
   const activeClassIndexRef = useRef(activeClassIndex);
   const onZoomChangeRef     = useRef(onZoomChange);
+  const onAnnotationsChangeRef = useRef(onAnnotationsChange);
+  const onSelectRef            = useRef(onSelect);
+  const onCoordsChangeRef      = useRef(onCoordsChange);
 
-  annotationsRef.current      = annotations;
-  selectedIdRef.current       = selectedId;
-  toolRef.current             = tool;
-  classesRef.current          = classes;
-  activeClassIndexRef.current = activeClassIndex;
-  onZoomChangeRef.current     = onZoomChange;
+  annotationsRef.current         = annotations;
+  selectedIdRef.current          = selectedId;
+  toolRef.current                = tool;
+  classesRef.current             = classes;
+  activeClassIndexRef.current    = activeClassIndex;
+  onZoomChangeRef.current        = onZoomChange;
+  onAnnotationsChangeRef.current = onAnnotationsChange;
+  onSelectRef.current            = onSelect;
+  onCoordsChangeRef.current      = onCoordsChange;
 
-  // ── coordinate helpers ───────────────────────────────────────────────────────
+  // ── coordinate helpers ────────────────────────────────────────────────────
 
   function canvasPos(e: MouseEvent) {
     const rect = canvasRef.current!.getBoundingClientRect();
@@ -103,11 +171,9 @@ const AnnotationCanvas = forwardRef<CanvasHandle, Props>(function AnnotationCanv
     };
   }
 
-  const clamp = (v: number) => Math.max(0, Math.min(1, v));
+  // ── hit testing ───────────────────────────────────────────────────────────
 
-  // ── hit testing ──────────────────────────────────────────────────────────────
-
-  // Returns corner index 0=TL 1=TR 2=BL 3=BR, or -1
+  // Returns corner index: 0=TL 1=TR 2=BL 3=BR, or -1
   function hitCorner(pos: { x: number; y: number }, ann: BBox): number {
     const r = yoloToCanvas(ann.cx, ann.cy, ann.w, ann.h);
     const corners = [
@@ -129,7 +195,7 @@ const AnnotationCanvas = forwardRef<CanvasHandle, Props>(function AnnotationCanv
     return pos.x >= r.x && pos.x <= r.x + r.w && pos.y >= r.y && pos.y <= r.y + r.h;
   }
 
-  // ── redraw ───────────────────────────────────────────────────────────────────
+  // ── redraw ────────────────────────────────────────────────────────────────
 
   const redraw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -138,7 +204,7 @@ const AnnotationCanvas = forwardRef<CanvasHandle, Props>(function AnnotationCanv
     const { width: cw, height: ch } = canvas;
 
     ctx.clearRect(0, 0, cw, ch);
-    ctx.fillStyle = "#111111";
+    ctx.fillStyle = CANVAS_BG;
     ctx.fillRect(0, 0, cw, ch);
 
     const img = imageRef.current;
@@ -178,54 +244,25 @@ const AnnotationCanvas = forwardRef<CanvasHandle, Props>(function AnnotationCanv
     }
   }, []);
 
-  function drawBox(
-    ctx: CanvasRenderingContext2D,
-    rect: { x: number; y: number; w: number; h: number },
-    color: string,
-    label: string,
-    isSelected: boolean,
-  ) {
-    const { x, y, w, h } = rect;
+  // ── zoom helpers ──────────────────────────────────────────────────────────
 
-    ctx.fillStyle = color + "18";
-    ctx.fillRect(x, y, w, h);
-    ctx.strokeStyle = color;
-    ctx.lineWidth = isSelected ? 2 : 1.5;
-    ctx.setLineDash([]);
-    ctx.strokeRect(x, y, w, h);
-
-    // label pill
-    ctx.font = "bold 11px Inter, system-ui, sans-serif";
-    const pillW = ctx.measureText(label).width + 12;
-    const pillH = 18;
-    const px = x;
-    const py = y - pillH - 2 < 0 ? y + 2 : y - pillH - 2;
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.roundRect(px, py, pillW, pillH, 3);
-    ctx.fill();
-    ctx.fillStyle = "#fff";
-    ctx.fillText(label, px + 6, py + 12);
-
-    // corner handles when selected
-    if (isSelected) {
-      const corners = [
-        { x, y }, { x: x + w, y },
-        { x, y: y + h }, { x: x + w, y: y + h },
-      ];
-      for (const c of corners) {
-        ctx.beginPath();
-        ctx.arc(c.x, c.y, HANDLE_RADIUS, 0, Math.PI * 2);
-        ctx.fillStyle = "#fff";
-        ctx.fill();
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 2;
-        ctx.stroke();
-      }
-    }
+  // Single zoom implementation — all zoom paths go through this.
+  function applyZoomAtPoint(factor: number, pivotX: number, pivotY: number) {
+    const ns = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, scaleRef.current * factor));
+    offsetRef.current = {
+      x: pivotX - (pivotX - offsetRef.current.x) * (ns / scaleRef.current),
+      y: pivotY - (pivotY - offsetRef.current.y) * (ns / scaleRef.current),
+    };
+    scaleRef.current = ns;
+    onZoomChangeRef.current(Math.round(ns * 100));
+    redraw();
   }
 
-  // ── fit / zoom ───────────────────────────────────────────────────────────────
+  function applyZoom(factor: number) {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    applyZoomAtPoint(factor, canvas.width / 2, canvas.height / 2);
+  }
 
   function fitImage() {
     const canvas = canvasRef.current;
@@ -240,27 +277,13 @@ const AnnotationCanvas = forwardRef<CanvasHandle, Props>(function AnnotationCanv
     redraw();
   }
 
-  function applyZoom(factor: number) {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const cx = canvas.width / 2, cy = canvas.height / 2;
-    const ns = Math.max(0.1, Math.min(10, scaleRef.current * factor));
-    offsetRef.current = {
-      x: cx - (cx - offsetRef.current.x) * (ns / scaleRef.current),
-      y: cy - (cy - offsetRef.current.y) * (ns / scaleRef.current),
-    };
-    scaleRef.current = ns;
-    onZoomChangeRef.current(Math.round(ns * 100));
-    redraw();
-  }
-
   useImperativeHandle(ref, () => ({
     fitImage,
-    zoomIn:  () => applyZoom(1.25),
-    zoomOut: () => applyZoom(1 / 1.25),
+    zoomIn:  () => applyZoom(ZOOM_BTN),
+    zoomOut: () => applyZoom(1 / ZOOM_BTN),
   }));
 
-  // ── resize observer ──────────────────────────────────────────────────────────
+  // ── resize observer ───────────────────────────────────────────────────────
 
   useEffect(() => {
     const wrapper = wrapperRef.current;
@@ -280,7 +303,7 @@ const AnnotationCanvas = forwardRef<CanvasHandle, Props>(function AnnotationCanv
     return () => obs.disconnect();
   }, [redraw]);
 
-  // ── load image ───────────────────────────────────────────────────────────────
+  // ── load image ────────────────────────────────────────────────────────────
 
   useEffect(() => {
     if (!imageSrc) { imageRef.current = null; redraw(); return; }
@@ -303,16 +326,17 @@ const AnnotationCanvas = forwardRef<CanvasHandle, Props>(function AnnotationCanv
 
   useEffect(() => { redraw(); }, [annotations, selectedId, redraw]);
 
-  // ── keyboard ─────────────────────────────────────────────────────────────────
+  // ── keyboard ──────────────────────────────────────────────────────────────
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.code === "Space") { spaceDownRef.current = true; e.preventDefault(); }
       if (e.key === "Escape") { isDrawingRef.current = false; previewAnnRef.current = null; redraw(); }
       if (e.key === "Delete" || e.key === "Backspace") {
-        if (selectedIdRef.current) {
-          onAnnotationsChange(annotationsRef.current.filter(a => a.id !== selectedIdRef.current));
-          onSelect(null);
+        const selId = selectedIdRef.current;
+        if (selId) {
+          onAnnotationsChangeRef.current(annotationsRef.current.filter(a => a.id !== selId));
+          onSelectRef.current(null);
         }
       }
     }
@@ -320,24 +344,22 @@ const AnnotationCanvas = forwardRef<CanvasHandle, Props>(function AnnotationCanv
       if (e.code === "Space") spaceDownRef.current = false;
     }
     window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("keyup",   onKeyUp);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("keyup",   onKeyUp);
     };
-  }, [redraw, onAnnotationsChange, onSelect]);
+  }, [redraw]);
 
-  // ── mouse events ─────────────────────────────────────────────────────────────
+  // ── mouse events ──────────────────────────────────────────────────────────
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     function getHandCursor(pos: { x: number; y: number }): string {
-      const anns  = annotationsRef.current;
-      const selId = selectedIdRef.current;
-      const selAnn = anns.find(a => a.id === selId);
-
+      const anns   = annotationsRef.current;
+      const selAnn = anns.find(a => a.id === selectedIdRef.current);
       if (selAnn) {
         const corner = hitCorner(pos, selAnn);
         if (corner === 0 || corner === 3) return "nwse-resize";
@@ -353,10 +375,7 @@ const AnnotationCanvas = forwardRef<CanvasHandle, Props>(function AnnotationCanv
     function updateCursor(pos?: { x: number; y: number }) {
       const t = toolRef.current;
       if (t === "box" || t === "polygon") { canvas.style.cursor = "crosshair"; return; }
-      if (t === "hand") {
-        canvas.style.cursor = pos ? getHandCursor(pos) : "grab";
-        return;
-      }
+      if (t === "hand") { canvas.style.cursor = pos ? getHandCursor(pos) : "grab"; return; }
       canvas.style.cursor = "default";
     }
 
@@ -365,49 +384,46 @@ const AnnotationCanvas = forwardRef<CanvasHandle, Props>(function AnnotationCanv
 
       // middle mouse or space → pan always
       if (e.button === 1 || spaceDownRef.current) {
-        dragModeRef.current = "pan";
+        dragModeRef.current     = "pan";
         dragStartPosRef.current = pos;
-        canvas.style.cursor = "grabbing";
+        canvas.style.cursor     = "grabbing";
         return;
       }
 
       if (toolRef.current === "hand") {
-        const anns  = annotationsRef.current;
-        const selId = selectedIdRef.current;
-        const selAnn = anns.find(a => a.id === selId);
+        const anns   = annotationsRef.current;
+        const selAnn = anns.find(a => a.id === selectedIdRef.current);
 
-        // check selected ann corners first
         if (selAnn) {
           const corner = hitCorner(pos, selAnn);
           if (corner !== -1) {
-            dragModeRef.current    = "resize";
+            dragModeRef.current     = "resize";
             dragStartPosRef.current = pos;
-            dragAnnIdRef.current   = selAnn.id;
-            dragAnnOrigRef.current = { ...selAnn };
+            dragAnnIdRef.current    = selAnn.id;
+            dragAnnOrigRef.current  = { ...selAnn };
             resizeCornerRef.current = corner;
-            canvas.style.cursor = (corner === 0 || corner === 3) ? "nwse-resize" : "nesw-resize";
+            canvas.style.cursor     = (corner === 0 || corner === 3) ? "nwse-resize" : "nesw-resize";
             return;
           }
         }
 
-        // check all boxes for move
         for (let i = anns.length - 1; i >= 0; i--) {
           if (hitBox(pos, anns[i])) {
-            onSelect(anns[i].id);
-            dragModeRef.current    = "move";
+            onSelectRef.current(anns[i].id);
+            dragModeRef.current     = "move";
             dragStartPosRef.current = pos;
-            dragAnnIdRef.current   = anns[i].id;
-            dragAnnOrigRef.current = { ...anns[i] };
-            canvas.style.cursor = "move";
+            dragAnnIdRef.current    = anns[i].id;
+            dragAnnOrigRef.current  = { ...anns[i] };
+            canvas.style.cursor     = "move";
             return;
           }
         }
 
-        // empty space → pan
-        onSelect(null);
-        dragModeRef.current = "pan";
+        // empty space → deselect + pan
+        onSelectRef.current(null);
+        dragModeRef.current     = "pan";
         dragStartPosRef.current = pos;
-        canvas.style.cursor = "grabbing";
+        canvas.style.cursor     = "grabbing";
         return;
       }
 
@@ -419,93 +435,84 @@ const AnnotationCanvas = forwardRef<CanvasHandle, Props>(function AnnotationCanv
     }
 
     function onMouseMove(e: MouseEvent) {
-      const pos = canvasPos(e);
+      const pos    = canvasPos(e);
       const imgPos = canvasToImage(pos.x, pos.y);
-      onCoordsChange(Math.round(imgPos.x), Math.round(imgPos.y));
+      onCoordsChangeRef.current(Math.round(imgPos.x), Math.round(imgPos.y));
 
-      // pan
       if (dragModeRef.current === "pan") {
         const dx = pos.x - dragStartPosRef.current.x;
         const dy = pos.y - dragStartPosRef.current.y;
-        offsetRef.current = { x: offsetRef.current.x + dx, y: offsetRef.current.y + dy };
+        offsetRef.current   = { x: offsetRef.current.x + dx, y: offsetRef.current.y + dy };
         dragStartPosRef.current = pos;
         redraw();
         return;
       }
 
-      // move
       if (dragModeRef.current === "move") {
-        const orig = dragAnnOrigRef.current!;
+        const orig     = dragAnnOrigRef.current!;
         const startImg = canvasToImage(dragStartPosRef.current.x, dragStartPosRef.current.y);
         const currImg  = canvasToImage(pos.x, pos.y);
         const { w: iw, h: ih } = imgSizeRef.current;
-        const dxN = (currImg.x - startImg.x) / iw;
-        const dyN = (currImg.y - startImg.y) / ih;
         previewAnnRef.current = {
           ...orig,
-          cx: clamp(orig.cx + dxN),
-          cy: clamp(orig.cy + dyN),
+          cx: clamp01(orig.cx + (currImg.x - startImg.x) / iw),
+          cy: clamp01(orig.cy + (currImg.y - startImg.y) / ih),
         };
         redraw();
         return;
       }
 
-      // resize
       if (dragModeRef.current === "resize") {
         const orig = dragAnnOrigRef.current!;
         const { w: iw, h: ih } = imgSizeRef.current;
         const imgCurr = canvasToImage(pos.x, pos.y);
-
-        const origL = (orig.cx - orig.w / 2) * iw;
-        const origR = (orig.cx + orig.w / 2) * iw;
-        const origT = (orig.cy - orig.h / 2) * ih;
-        const origB = (orig.cy + orig.h / 2) * ih;
-
-        let l = origL, r = origR, t = origT, b = origB;
         const c = resizeCornerRef.current;
+
+        let l = (orig.cx - orig.w / 2) * iw;
+        let r = (orig.cx + orig.w / 2) * iw;
+        let t = (orig.cy - orig.h / 2) * ih;
+        let b = (orig.cy + orig.h / 2) * ih;
+
         if (c === 0) { l = imgCurr.x; t = imgCurr.y; }
         if (c === 1) { r = imgCurr.x; t = imgCurr.y; }
         if (c === 2) { l = imgCurr.x; b = imgCurr.y; }
         if (c === 3) { r = imgCurr.x; b = imgCurr.y; }
 
-        // min size
+        // enforce minimum size
         if (r - l < MIN_BOX_PX) { if (c === 0 || c === 2) l = r - MIN_BOX_PX; else r = l + MIN_BOX_PX; }
         if (b - t < MIN_BOX_PX) { if (c === 0 || c === 1) t = b - MIN_BOX_PX; else b = t + MIN_BOX_PX; }
 
         previewAnnRef.current = {
           ...orig,
-          cx: clamp((l + r) / 2 / iw),
-          cy: clamp((t + b) / 2 / ih),
-          w:  clamp((r - l) / iw),
-          h:  clamp((b - t) / ih),
+          cx: clamp01((l + r) / 2 / iw),
+          cy: clamp01((t + b) / 2 / ih),
+          w:  clamp01((r - l) / iw),
+          h:  clamp01((b - t) / ih),
         };
         redraw();
         return;
       }
 
-      // box drawing
       if (isDrawingRef.current) {
         drawEndRef.current = pos;
         redraw();
         return;
       }
 
-      // hover cursor update for hand tool
       if (toolRef.current === "hand") updateCursor(pos);
     }
 
     function onMouseUp(e: MouseEvent) {
-      // commit move / resize
       if (dragModeRef.current === "move" || dragModeRef.current === "resize") {
         const preview = previewAnnRef.current;
         if (preview) {
-          onAnnotationsChange(
+          onAnnotationsChangeRef.current(
             annotationsRef.current.map(a => a.id === preview.id ? preview : a)
           );
           previewAnnRef.current = null;
         }
-        dragModeRef.current = "none";
-        dragAnnIdRef.current = null;
+        dragModeRef.current    = "none";
+        dragAnnIdRef.current   = null;
         dragAnnOrigRef.current = null;
         updateCursor(canvasPos(e));
         return;
@@ -517,7 +524,6 @@ const AnnotationCanvas = forwardRef<CanvasHandle, Props>(function AnnotationCanv
         return;
       }
 
-      // commit box draw
       if (isDrawingRef.current && toolRef.current === "box") {
         isDrawingRef.current = false;
         const s   = drawStartRef.current;
@@ -532,11 +538,11 @@ const AnnotationCanvas = forwardRef<CanvasHandle, Props>(function AnnotationCanv
           const newAnn: BBox = {
             id: crypto.randomUUID(),
             classIndex: activeClassIndexRef.current,
-            cx: clamp(yolo.cx), cy: clamp(yolo.cy),
-            w:  clamp(yolo.w),  h:  clamp(yolo.h),
+            cx: clamp01(yolo.cx), cy: clamp01(yolo.cy),
+            w:  clamp01(yolo.w),  h:  clamp01(yolo.h),
           };
-          onAnnotationsChange([...annotationsRef.current, newAnn]);
-          onSelect(newAnn.id);
+          onAnnotationsChangeRef.current([...annotationsRef.current, newAnn]);
+          onSelectRef.current(newAnn.id);
         }
         redraw();
       }
@@ -544,16 +550,8 @@ const AnnotationCanvas = forwardRef<CanvasHandle, Props>(function AnnotationCanv
 
     function onWheel(e: WheelEvent) {
       e.preventDefault();
-      const pos    = canvasPos(e);
-      const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
-      const ns     = Math.max(0.1, Math.min(10, scaleRef.current * factor));
-      offsetRef.current = {
-        x: pos.x - (pos.x - offsetRef.current.x) * (ns / scaleRef.current),
-        y: pos.y - (pos.y - offsetRef.current.y) * (ns / scaleRef.current),
-      };
-      scaleRef.current = ns;
-      onZoomChangeRef.current(Math.round(ns * 100));
-      redraw();
+      const pos = canvasPos(e);
+      applyZoomAtPoint(e.deltaY < 0 ? ZOOM_WHEEL_IN : 1 / ZOOM_WHEEL_IN, pos.x, pos.y);
     }
 
     updateCursor();
@@ -567,10 +565,10 @@ const AnnotationCanvas = forwardRef<CanvasHandle, Props>(function AnnotationCanv
       canvas.removeEventListener("mouseup",   onMouseUp);
       canvas.removeEventListener("wheel",     onWheel);
     };
-  }, [redraw, onAnnotationsChange, onSelect, onCoordsChange, tool]);
+  }, [redraw, tool]);
 
   return (
-    <div ref={wrapperRef} style={{ flex: 1, overflow: "hidden", background: "#111" }}>
+    <div ref={wrapperRef} style={{ flex: 1, overflow: "hidden", background: CANVAS_BG }}>
       <canvas ref={canvasRef} style={{ display: "block", width: "100%", height: "100%" }} />
     </div>
   );

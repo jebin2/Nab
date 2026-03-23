@@ -9,9 +9,36 @@ import ClassPanel from "../components/ClassPanel";
 import { type BBox, type ClassDef, type AnnotateTool, type ImageEntry } from "../lib/annotationTypes";
 import { MOCK_IMAGES, MOCK_CLASSES } from "../lib/mockImages";
 
-type ToolDef =
-  | { id: AnnotateTool; Icon: React.ElementType; title: string; action?: never }
-  | { action: "fit" | "zoomIn" | "zoomOut" | "delete"; Icon: React.ElementType; title: string; id?: never };
+// ── toolbar types ─────────────────────────────────────────────────────────────
+
+type ToolAction = "fit" | "zoomIn" | "zoomOut" | "delete" | "prev" | "next" | "skip";
+
+type ToolItem =
+  | { kind: "tool";   id: AnnotateTool; Icon: React.ElementType; title: string }
+  | { kind: "action"; action: ToolAction; Icon: React.ElementType; title: string };
+
+type ToolbarEntry = ToolItem | "divider";
+
+// ── toolbar definition (module-level — no component state dependency) ─────────
+
+const TOOLBAR: ToolbarEntry[] = [
+  { kind: "action", action: "fit",     Icon: Maximize2,    title: "Fit to screen (F)" },
+  "divider",
+  { kind: "tool",   id: "hand",        Icon: Hand,         title: "Hand — select / move / resize (H)" },
+  { kind: "tool",   id: "box",         Icon: Square,       title: "Bounding box (B)" },
+  { kind: "tool",   id: "polygon",     Icon: Lasso,        title: "Segmentation (P)" },
+  "divider",
+  { kind: "action", action: "zoomIn",  Icon: ZoomIn,       title: "Zoom in" },
+  { kind: "action", action: "zoomOut", Icon: ZoomOut,      title: "Zoom out" },
+  "divider",
+  { kind: "action", action: "delete",  Icon: Trash2,       title: "Delete selected (Del)" },
+  "divider",
+  { kind: "action", action: "prev",    Icon: ChevronLeft,  title: "Previous image (A)" },
+  { kind: "action", action: "next",    Icon: ChevronRight, title: "Next image (D)" },
+  { kind: "action", action: "skip",    Icon: SkipForward,  title: "Skip image" },
+];
+
+// ── component ─────────────────────────────────────────────────────────────────
 
 export default function Annotate() {
   const [images, setImages]                     = useState<ImageEntry[]>(MOCK_IMAGES);
@@ -23,17 +50,11 @@ export default function Annotate() {
   const [zoom, setZoom]                         = useState(100);
   const [coords, setCoords]                     = useState({ x: 0, y: 0 });
 
-  const canvasRef = useRef<CanvasHandle>(null);
+  const canvasRef    = useRef<CanvasHandle>(null);
   const currentImage = images[currentIndex];
 
   function updateAnnotations(anns: BBox[]) {
     setImages(prev => prev.map((img, i) => i === currentIndex ? { ...img, annotations: anns } : img));
-  }
-
-  function deleteSelected() {
-    if (!selectedId) return;
-    updateAnnotations(currentImage.annotations.filter(a => a.id !== selectedId));
-    setSelectedId(null);
   }
 
   function navigate(delta: number) {
@@ -41,7 +62,7 @@ export default function Annotate() {
     setCurrentIndex(prev => Math.max(0, Math.min(images.length - 1, prev + delta)));
   }
 
-  // A / D keyboard navigation
+  // A / D / H / B / P / F keyboard shortcuts
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const tag = (e.target as HTMLElement).tagName;
@@ -59,48 +80,36 @@ export default function Annotate() {
 
   const annotatedCount = images.filter(i => i.annotations.length > 0).length;
 
-  // ── toolbar definition ───────────────────────────────────────────────────────
+  // ── toolbar handlers ──────────────────────────────────────────────────────
 
-  const TOOLBAR: (ToolDef | "divider")[] = [
-    { action: "fit",     Icon: Maximize2,    title: "Fit to screen (F)" },
-    "divider",
-    { id: "hand",        Icon: Hand,         title: "Hand — select / move / resize (H)" },
-    { id: "box",         Icon: Square,       title: "Bounding box (B)" },
-    { id: "polygon",     Icon: Lasso,        title: "Segmentation (P)" },
-    "divider",
-    { action: "zoomIn",  Icon: ZoomIn,       title: "Zoom in" },
-    { action: "zoomOut", Icon: ZoomOut,      title: "Zoom out" },
-    "divider",
-    { action: "delete",  Icon: Trash2,       title: "Delete selected (Del)" },
-    "divider",
-    { action: "prev",    Icon: ChevronLeft,  title: "Previous image (A)" } as any,
-    { action: "next",    Icon: ChevronRight, title: "Next image (D)" } as any,
-    { action: "skip",    Icon: SkipForward,  title: "Skip image" } as any,
-  ];
-
-  function handleToolbarClick(item: ToolDef) {
-    if (item.id) { setTool(item.id); return; }
+  function handleToolbarClick(item: ToolItem) {
+    if (item.kind === "tool") { setTool(item.id); return; }
     switch (item.action) {
       case "fit":     canvasRef.current?.fitImage(); break;
-      case "zoomIn":  canvasRef.current?.zoomIn(); break;
-      case "zoomOut": canvasRef.current?.zoomOut(); break;
-      case "delete":  deleteSelected(); break;
-      case "prev":    navigate(-1); break;
-      case "next":    navigate(1); break;
-      case "skip":    navigate(1); break;
+      case "zoomIn":  canvasRef.current?.zoomIn();   break;
+      case "zoomOut": canvasRef.current?.zoomOut();  break;
+      case "delete":
+        if (selectedId) {
+          updateAnnotations(currentImage.annotations.filter(a => a.id !== selectedId));
+          setSelectedId(null);
+        }
+        break;
+      case "prev": navigate(-1); break;
+      case "next": navigate(1);  break;
+      case "skip": navigate(1);  break;
     }
   }
 
-  function isActive(item: ToolDef): boolean {
-    if (item.id) return item.id === tool;
-    return false;
+  function isActive(item: ToolItem): boolean {
+    return item.kind === "tool" && item.id === tool;
   }
 
-  function isDisabled(item: ToolDef): boolean {
-    if (item.action === "delete") return !selectedId;
-    if ((item.action as any) === "prev") return currentIndex === 0;
-    if ((item.action as any) === "next" || (item.action as any) === "skip")
-      return currentIndex === images.length - 1;
+  function isDisabled(item: ToolItem): boolean {
+    if (item.kind === "action") {
+      if (item.action === "delete") return !selectedId;
+      if (item.action === "prev")   return currentIndex === 0;
+      if (item.action === "next" || item.action === "skip") return currentIndex === images.length - 1;
+    }
     return false;
   }
 
@@ -167,25 +176,24 @@ export default function Annotate() {
             display: "flex", alignItems: "center",
             justifyContent: "center", gap: 2, padding: "0 12px",
           }}>
-            {/* zoom info on the left */}
+            {/* zoom + coords on the left */}
             <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "monospace", marginRight: "auto" }}>
               {zoom}% · {coords.x}, {coords.y}
             </span>
 
-            {TOOLBAR.map((item, i) => {
-              if (item === "divider") {
+            {TOOLBAR.map((entry, i) => {
+              if (entry === "divider") {
                 return <div key={i} style={{ width: 1, height: 20, background: "var(--border)", margin: "0 4px" }} />;
               }
-              const active   = isActive(item as ToolDef);
-              const disabled = isDisabled(item as ToolDef);
-              const { Icon, title } = item as ToolDef;
-              const isDanger = (item as any).action === "delete";
+              const active    = isActive(entry);
+              const disabled  = isDisabled(entry);
+              const isDanger  = entry.kind === "action" && entry.action === "delete";
               return (
                 <button
                   key={i}
-                  title={title}
+                  title={entry.title}
                   disabled={disabled}
-                  onClick={() => handleToolbarClick(item as ToolDef)}
+                  onClick={() => handleToolbarClick(entry)}
                   style={{
                     width: 34, height: 34, borderRadius: 7, border: "none",
                     background: active ? "rgba(59,130,246,0.15)" : "transparent",
@@ -201,7 +209,7 @@ export default function Annotate() {
                     transition: "background 0.12s, color 0.12s",
                   }}
                 >
-                  <Icon size={16} />
+                  <entry.Icon size={16} />
                 </button>
               );
             })}

@@ -1,3 +1,5 @@
+import { type ProjectStatus, type Project } from "./types";
+
 export const CLASS_COLORS = [
   "#3B82F6", // blue
   "#22C55E", // green
@@ -9,32 +11,18 @@ export const CLASS_COLORS = [
   "#EC4899", // pink
 ];
 
-export type ProjectStatus = "annotating" | "ready" | "training" | "trained";
-
-export interface Project {
-  id: string;
-  name: string;
-  baseModel?: string;   // set in Train tab
-  classes?: string[];   // set in Annotate tab
-  status: ProjectStatus;
-  imageCount: number;
-  mAP?: number;
-  updatedAt: string;
-  thumbnailColor: string;
-}
-
 export const STATUS_LABELS: Record<ProjectStatus, string> = {
   annotating: "Annotating",
-  ready: "Ready",
-  training: "Training",
-  trained: "Trained",
+  ready:      "Ready",
+  training:   "Training",
+  trained:    "Trained",
 };
 
 export const STATUS_COLORS: Record<ProjectStatus, string> = {
   annotating: "#EAB308",
-  ready: "#3B82F6",
-  training: "#F97316",
-  trained: "#22C55E",
+  ready:      "#3B82F6",
+  training:   "#F97316",
+  trained:    "#22C55E",
 };
 
 export const BASE_MODELS = [
@@ -45,7 +33,6 @@ export const BASE_MODELS = [
   "YOLOv11s",
 ];
 
-// Mock data for dashboard
 export const MOCK_PROJECTS: Project[] = [
   {
     id: "1",
