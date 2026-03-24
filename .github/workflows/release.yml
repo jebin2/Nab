@@ -87,8 +87,11 @@ jobs:
           $src = Get-ChildItem artifacts/ -Filter "*Setup.zip" | Select-Object -First 1
           Write-Host "=== Using: $($src.FullName) ==="
           & "C:\Program Files\7-Zip\7z.exe" x $src.FullName -o"setup_extracted"
+          $iconSrc = "$env:GITHUB_WORKSPACE\resources\icon_transparent.ico"
+          Copy-Item $iconSrc installer-icon.ico
+          Copy-Item installer-icon.ico setup_extracted\installer-icon.ico
           Copy-Item scripts/installer.nsi installer.nsi
-          & "C:\Program Files (x86)\NSIS\makensis.exe" installer.nsi
+          & "C:\Program Files (x86)\NSIS\makensis.exe" /DICON_PATH=installer-icon.ico installer.nsi
           Write-Host "=== Created: $(Get-Item Reticle-Windows.exe | Select-Object Name, Length) ==="
       - uses: softprops/action-gh-release@v1
         with:

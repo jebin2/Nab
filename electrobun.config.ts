@@ -5,6 +5,7 @@ export default {
 		name: "Reticle",
 		identifier: "reticle.app",
 		version: "0.1.0",
+		icon: "resources/icon_transparent.png",
 	},
 	build: {
 		bun: {
@@ -18,6 +19,8 @@ export default {
 		copy: {
 			"src/mainview/index.html": "views/mainview/index.html",
 			"src/mainview/index.css": "views/mainview/index.css",
+			"resources/icon_transparent.png": "icon.png",
+			"resources/icon_transparent.png": "views/mainview/icon.png",
 			"src/python/train.py": "python/train.py",
 			"src/python/infer.py": "python/infer.py",
 			"src/python/export.py": "python/export.py",

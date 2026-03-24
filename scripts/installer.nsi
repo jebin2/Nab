@@ -1,5 +1,10 @@
 !include "MUI2.nsh"
 
+!ifdef ICON_PATH
+  !define MUI_ICON "${ICON_PATH}"
+  !define MUI_UNICON "${ICON_PATH}"
+!endif
+
 Name "Reticle"
 OutFile "Reticle-Windows.exe"
 InstallDir "$LOCALAPPDATA\Reticle"
@@ -17,7 +22,9 @@ Section "Install"
   nsExec::ExecToLog '"$INSTDIR\Reticle-Setup.exe"'
 
   CreateShortcut "$DESKTOP\Reticle.lnk" \
-    "$LOCALAPPDATA\reticle.app\stable\app\bin\launcher.exe"
+    "$LOCALAPPDATA\reticle.app\stable\app\bin\launcher.exe" \
+    "" "$INSTDIR\installer-icon.ico" 0
   CreateShortcut "$SMPROGRAMS\Reticle.lnk" \
-    "$LOCALAPPDATA\reticle.app\stable\app\bin\launcher.exe"
+    "$LOCALAPPDATA\reticle.app\stable\app\bin\launcher.exe" \
+    "" "$INSTDIR\installer-icon.ico" 0
 SectionEnd
