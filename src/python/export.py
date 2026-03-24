@@ -22,7 +22,7 @@ FORMAT_DEPS: dict[str, list[str]] = {
     "onnx":     ["onnx", "onnxruntime", "onnxslim"],
     "openvino": ["openvino"],
     "coreml":   ["coremltools"],
-    "tflite":   ["tensorflow"],
+    "tflite":   ["onnx2tf", "onnx", "onnxruntime", "onnxslim", "sng4onnx", "flatbuffers"],
 }
 
 

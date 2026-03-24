@@ -12,15 +12,16 @@ interface FormatDef {
   id:    string;
   label: string;
   desc:  string;
+  note?: string;
   Icon:  React.ElementType;
 }
 
 const FORMATS: FormatDef[] = [
-  { id: "pt",       label: "PyTorch (.pt)",      desc: "Full precision floating point weights. Best for fine-tuning and retraining.", Icon: Package    },
-  { id: "onnx",     label: "ONNX (.onnx)",        desc: "Universal interoperability format. Highly optimized for CPU inference.",       Icon: GitMerge   },
-  { id: "tflite",   label: "TFLite (.tflite)",    desc: "Mobile deployment. Quantized to INT8 for edge devices.",                       Icon: Smartphone },
-  { id: "coreml",   label: "CoreML (.mlpackage)", desc: "Optimized for Apple Neural Engine (ANE). macOS/iOS only.",                    Icon: Monitor    },
-  { id: "openvino", label: "OpenVINO",            desc: "Intel hardware acceleration. Optimized for Intel CPUs and GPUs.",              Icon: Cpu        },
+  { id: "pt",       label: "PyTorch (.pt)",      desc: "Full precision floating point weights. Best for fine-tuning and retraining.",                                  Icon: Package    },
+  { id: "onnx",     label: "ONNX (.onnx)",        desc: "Universal interoperability format. Highly optimized for CPU inference.",                                       Icon: GitMerge   },
+  { id: "tflite",   label: "TFLite (.tflite)",    desc: "Mobile deployment. Quantized to INT8 for edge devices.",          note: "First export installs deps (~50 MB)", Icon: Smartphone },
+  { id: "coreml",   label: "CoreML (.mlpackage)", desc: "Optimized for Apple Neural Engine (ANE). macOS/iOS only.",                                                    Icon: Monitor    },
+  { id: "openvino", label: "OpenVINO",            desc: "Intel hardware acceleration. Optimized for Intel CPUs and GPUs.", note: "First export installs deps (~30 MB)", Icon: Cpu        },
 ];
 
 // ── types ─────────────────────────────────────────────────────────────────────
@@ -307,6 +308,11 @@ function FormatRow({ fmt, disabled, isLast, onDownload }: {
         <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
           {fmt.desc}
         </div>
+        {fmt.note && (
+          <div style={{ fontSize: 11, color: "var(--accent)", marginTop: 3 }}>
+            {fmt.note}
+          </div>
+        )}
       </div>
 
       <div style={{ flexShrink: 0 }}>
