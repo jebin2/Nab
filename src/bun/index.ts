@@ -249,7 +249,7 @@ const rpc = defineElectrobunRPC("bun", {
 				}
 			},
 
-			buildAndDownloadCLI: async ({ outputPath, runName }: { outputPath: string; runName: string }) => {
+			buildAndDownloadCLI: async ({ outputPath, runName, runId }: { outputPath: string; runName: string; runId: string }) => {
 				const modelPath = join(outputPath, "weights", "weights", "best.pt");
 				if (!(await Bun.file(modelPath).exists()))
 					return { savedPath: "", error: "Model weights not found." };
@@ -272,9 +272,11 @@ const rpc = defineElectrobunRPC("bun", {
 						[process.execPath, "build", "--compile", join(buildDir, "cli.ts"), "--outfile", outBinary],
 						{ stdout: "pipe", stderr: "pipe" },
 					);
+					runningProcesses.set(runId, proc);
 					let stderr = "";
 					for await (const chunk of proc.stderr) stderr += new TextDecoder().decode(chunk);
 					const exitCode = await proc.exited;
+					runningProcesses.delete(runId);
 					if (exitCode !== 0)
 						return { savedPath: "", error: `Compile failed: ${stderr.trim().split("\n").pop()}` };
 				} finally {
@@ -310,6 +312,7 @@ const rpc = defineElectrobunRPC("bun", {
 					let stderr = "";
 					for await (const chunk of proc.stderr) stderr += new TextDecoder().decode(chunk);
 					const exitCode = await proc.exited;
+					runningProcesses.delete(runId);
 					if (exitCode !== 0)
 						return { bundlePath: "", error: `Compile failed: ${stderr.trim().split("\n").pop()}` };
 				} finally {
@@ -319,7 +322,13 @@ const rpc = defineElectrobunRPC("bun", {
 				return { bundlePath: outBinary, error: null };
 			},
 
-			downloadExport: async ({ outputPath, format }: { outputPath: string; format: string }) => {
+			cancelExport: async ({ runId }: { runId: string }) => {
+				const proc = runningProcesses.get(runId);
+				if (proc) { proc.kill(9); runningProcesses.delete(runId); }
+				return {};
+			},
+
+		downloadExport: async ({ outputPath, format, runId }: { outputPath: string; format: string; runId: string }) => {
 				const modelPath = join(outputPath, "weights", "weights", "best.pt");
 				if (!(await Bun.file(modelPath).exists()))
 					return { savedPath: "", error: "Model weights not found." };
@@ -332,6 +341,7 @@ const rpc = defineElectrobunRPC("bun", {
 					const { stdout, stderr } = await runProcess([VENV_PYTHON, EXPORT_SCRIPT], {
 						stdinData: JSON.stringify({ modelPath, format }),
 						stderrHandler: async () => {},
+						runId,
 					});
 					const line = stdout.trim().split("\n").filter(Boolean).pop() ?? "";
 					try {

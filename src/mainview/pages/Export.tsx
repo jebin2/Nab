@@ -33,6 +33,7 @@ type DownloadOp =
 interface DownloadModal {
   open:      boolean;
   formatId:  string;
+  runId:     string;
   label:     string;
   status:    "loading" | "done" | "error";
   savedPath: string;
@@ -44,7 +45,7 @@ interface Props {
 }
 
 const MODAL_CLOSED: DownloadModal = {
-  open: false, formatId: "", label: "", status: "loading", savedPath: "", error: "",
+  open: false, formatId: "", runId: "", label: "", status: "loading", savedPath: "", error: "",
 };
 
 // ── component ─────────────────────────────────────────────────────────────────
@@ -61,16 +62,20 @@ export default function Export({ runs }: Props) {
 
   const selectedRun = doneRuns.find(r => r.id === selectedRunId) ?? null;
 
-  function closeDlModal() {
+  function closeDlModal(currentModal: DownloadModal) {
+    if (currentModal.status === "loading" && currentModal.runId) {
+      getRPC().request.cancelExport({ runId: currentModal.runId }).catch(() => {});
+    }
     setDlModal(MODAL_CLOSED);
   }
 
   async function handleDownload(op: DownloadOp) {
-    setDlModal({ open: true, formatId: op.id, label: op.label, status: "loading", savedPath: "", error: "" });
+    const runId = crypto.randomUUID();
+    setDlModal({ open: true, formatId: op.id, runId, label: op.label, status: "loading", savedPath: "", error: "" });
     try {
       const res = op.kind === "cli"
-        ? await getRPC().request.buildAndDownloadCLI({ outputPath: op.outputPath, runName: op.runName })
-        : await getRPC().request.downloadExport({ outputPath: op.outputPath, format: op.format });
+        ? await getRPC().request.buildAndDownloadCLI({ outputPath: op.outputPath, runName: op.runName, runId })
+        : await getRPC().request.downloadExport({ outputPath: op.outputPath, format: op.format, runId });
       if (res.error) {
         setDlModal(prev => ({ ...prev, status: "error", error: res.error! }));
       } else {
@@ -90,7 +95,7 @@ export default function Export({ runs }: Props) {
           status={dlModal.status}
           savedPath={dlModal.savedPath}
           error={dlModal.error}
-          onClose={closeDlModal}
+          onClose={() => closeDlModal(dlModal)}
         />
       )}
 
@@ -346,20 +351,18 @@ function DownloadModalOverlay({ label, status, savedPath, error, onClose }: {
         display: "flex", flexDirection: "column", alignItems: "center", gap: 14,
       }}>
 
-        {status !== "loading" && (
-          <button
-            onClick={onClose}
-            style={{
-              position: "absolute", top: 12, right: 12,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              width: 28, height: 28, borderRadius: 6,
-              border: "1px solid var(--border)", background: "var(--bg)",
-              color: "var(--text-muted)", cursor: "pointer",
-            }}
-          >
-            <X size={14} />
-          </button>
-        )}
+        <button
+          onClick={onClose}
+          style={{
+            position: "absolute", top: 12, right: 12,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            width: 28, height: 28, borderRadius: 6,
+            border: "1px solid var(--border)", background: "var(--bg)",
+            color: "var(--text-muted)", cursor: "pointer",
+          }}
+        >
+          <X size={14} />
+        </button>
 
         {status === "loading" && (
           <>
