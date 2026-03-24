@@ -19,7 +19,6 @@ export default {
 		copy: {
 			"src/mainview/index.html": "views/mainview/index.html",
 			"src/mainview/index.css": "views/mainview/index.css",
-			"resources/icon_transparent.png": "icon.png",
 			"resources/icon_transparent.png": "views/mainview/icon.png",
 			"src/python/train.py": "python/train.py",
 			"src/python/infer.py": "python/infer.py",

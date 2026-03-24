@@ -27,20 +27,7 @@ export default function Sidebar({ activePage, onNavigate }: Props) {
       {/* Logo */}
       <div style={{ height: 56, display: "flex", alignItems: "center", padding: "0 16px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{
-            width: 28, height: 28,
-            background: "var(--accent)",
-            borderRadius: 6,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            flexShrink: 0,
-          }}>
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <rect x="1" y="1" width="6" height="6" rx="1" fill="white" fillOpacity="0.9" />
-              <rect x="9" y="1" width="6" height="6" rx="1" fill="white" fillOpacity="0.5" />
-              <rect x="1" y="9" width="6" height="6" rx="1" fill="white" fillOpacity="0.5" />
-              <rect x="9" y="9" width="6" height="6" rx="1" fill="white" fillOpacity="0.9" />
-            </svg>
-          </div>
+          <img src="icon.png" width={28} height={28} style={{ flexShrink: 0, borderRadius: 4 }} />
           <span style={{ fontWeight: 700, fontSize: 15, letterSpacing: "-0.3px", color: "var(--text)" }}>
             Reticle
           </span>
