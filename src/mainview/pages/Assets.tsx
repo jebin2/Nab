@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Plus, Trash2, FolderOpen, Tag, Image } from "lucide-react";
 import { type Asset, type TrainingRun } from "../lib/types";
+import { Field, inputStyle } from "../components/FormFields";
 import { CLASS_COLORS } from "../lib/constants";
 import { getRPC } from "../lib/rpc";
 import DeleteConfirmModal from "../components/DeleteConfirmModal";
@@ -360,23 +361,6 @@ function NewAssetModal({ assets, runs, onClose, onCreate }: {
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: "var(--text-muted)", marginBottom: 6 }}>
-        {label}
-      </label>
-      {children}
-    </div>
-  );
-}
-
-const inputStyle: React.CSSProperties = {
-  width: "100%", padding: "8px 10px", borderRadius: 6,
-  border: "1px solid var(--border)", background: "var(--bg)",
-  color: "var(--text)", fontSize: 13, fontFamily: "inherit",
-  outline: "none", boxSizing: "border-box",
-};
 
 const THUMBNAIL_COLORS = [
   "#1e3a5f", "#2d1f3d", "#1a3d2b", "#3d2a1a",
