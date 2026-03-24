@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { Plus, FolderOpen, Cpu, Play, Pause, Square, Trash2, Terminal, ChevronDown } from "lucide-react";
 import DetailPageHeader, { HeaderBtn } from "../components/DetailPageHeader";
 import DeleteConfirmModal from "../components/DeleteConfirmModal";
+import CustomSelect from "../components/CustomSelect";
 import { type TrainingRun, type Asset } from "../lib/types";
 import { RUN_STATUS_LABELS, RUN_STATUS_COLORS, BASE_MODELS, DEVICES, CLASS_COLORS } from "../lib/constants";
 import { getRPC } from "../lib/rpc";
@@ -1018,71 +1019,6 @@ function LogLine({ line }: { line: string }) {
 
 // ── CustomSelect ───────────────────────────────────────────────────────────────
 
-function CustomSelect({ value, options, onChange }: {
-  value: string;
-  options: string[];
-  onChange: (v: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [open]);
-
-  return (
-    <div ref={ref} style={{ position: "relative" }}>
-      <button
-        type="button"
-        onClick={() => setOpen(o => !o)}
-        style={{
-          ...selectStyle,
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          cursor: "pointer", textAlign: "left",
-        }}
-      >
-        <span>{value}</span>
-        <ChevronDown size={13} style={{ flexShrink: 0, opacity: 0.6, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
-      </button>
-      {open && (
-        <div style={{
-          position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 200,
-          background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6,
-          boxShadow: "0 8px 24px rgba(0,0,0,0.4)", overflow: "hidden",
-        }}>
-          {options.map(opt => (
-            <div
-              key={opt}
-              onClick={() => { onChange(opt); setOpen(false); }}
-              style={{
-                padding: "8px 10px", fontSize: 13, cursor: "pointer",
-                color: opt === value ? "var(--accent)" : "var(--text)",
-                background: opt === value ? "rgba(59,130,246,0.08)" : "transparent",
-                transition: "background 0.1s",
-              }}
-              onMouseEnter={e => { if (opt !== value) (e.currentTarget as HTMLDivElement).style.background = "var(--bg)"; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = opt === value ? "rgba(59,130,246,0.08)" : "transparent"; }}
-            >
-              {opt}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-const selectStyle: React.CSSProperties = {
-  width: "100%", padding: "8px 10px", borderRadius: 6,
-  border: "1px solid var(--border)", background: "var(--bg)",
-  color: "var(--text)", fontSize: 13, fontFamily: "inherit",
-  outline: "none", boxSizing: "border-box",
-};
 
 // ── NewRunModal ────────────────────────────────────────────────────────────────
 

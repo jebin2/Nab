@@ -3,6 +3,7 @@ import { Upload, ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import { type TrainingRun } from "../lib/types";
 import { CLASS_COLORS } from "../lib/constants";
 import { getRPC, getBridgeUrl } from "../lib/rpc";
+import CustomSelect from "../components/CustomSelect";
 
 // ── types ──────────────────────────────────────────────────────────────────────
 
@@ -310,22 +311,13 @@ export default function Inference({ runs }: Props) {
                 No trained models yet.<br />Complete a training run first.
               </span>
             ) : (
-              <select
+              <CustomSelect
                 value={selectedRunId ?? ""}
-                onChange={e => handleSelectRun(e.target.value)}
-                style={{
-                  width: "100%", padding: "7px 10px", borderRadius: 6,
-                  border: "1px solid var(--border)", background: "var(--bg)",
-                  color: "var(--text)", fontSize: 12, fontFamily: "monospace",
-                  cursor: "pointer", outline: "none",
-                }}
-              >
-                {doneRuns.map(run => (
-                  <option key={run.id} value={run.id}>
-                    {run.name}{run.mAP != null ? `  (mAP ${run.mAP.toFixed(2)})` : ""}
-                  </option>
-                ))}
-              </select>
+                options={doneRuns.map(run => ({ value: run.id, label: run.name + (run.mAP != null ? `  (mAP ${run.mAP.toFixed(2)})` : "") }))}
+                onChange={handleSelectRun}
+                fontSize={12}
+                mono
+              />
             )}
           </Panel>
 

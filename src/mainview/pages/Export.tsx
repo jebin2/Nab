@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { type TrainingRun } from "../lib/types";
 import { getRPC, getBridgeUrl } from "../lib/rpc";
+import CustomSelect from "../components/CustomSelect";
 
 // ── format definitions ────────────────────────────────────────────────────────
 
@@ -146,22 +147,12 @@ export default function Export({ runs }: Props) {
                 No trained models yet — complete a training run first.
               </div>
             ) : (
-              <select
+              <CustomSelect
                 value={selectedRunId ?? ""}
-                onChange={e => setSelectedRunId(e.target.value)}
-                style={{
-                  width: "100%", padding: "10px 14px", borderRadius: 8,
-                  border: "1px solid var(--border)", background: "var(--surface)",
-                  color: "var(--text)", fontSize: 13, fontFamily: "monospace",
-                  cursor: "pointer", outline: "none",
-                }}
-              >
-                {doneRuns.map(r => (
-                  <option key={r.id} value={r.id}>
-                    {r.name}{r.mAP != null ? `  —  mAP ${r.mAP.toFixed(3)}` : ""}
-                  </option>
-                ))}
-              </select>
+                options={doneRuns.map(r => ({ value: r.id, label: r.name + (r.mAP != null ? `  —  mAP ${r.mAP.toFixed(3)}` : "") }))}
+                onChange={setSelectedRunId}
+                mono
+              />
             )}
           </div>
 
