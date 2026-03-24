@@ -103,20 +103,19 @@ def retry_on_cpu(config: dict):
         raise RuntimeError((stderr_output or "CPU fallback failed").strip())
 
 
-def build_dataset(asset_paths: list[str], class_map: list[str], output_dir: Path) -> Path:
+def build_dataset(images: list[dict], class_map: list[str], output_dir: Path) -> Path:
     """
-    Merge multiple asset folders (each with images/ and labels/) into a single
-    dataset directory and write a data.yaml for Ultralytics.
+    Copy a locked set of image/label pairs into a merged dataset directory
+    and write a data.yaml for Ultralytics.
 
-    Asset folder layout (written by YOLOStudio):
-        <asset>/images/   ← image files
-        <asset>/labels/   ← YOLO .txt files (class_id cx cy w h)
-        <asset>/classes.txt
+    images: list of {"img": "/abs/path/image.jpg", "lbl": "/abs/path/label.txt"}
+    Each pair was snapshot-locked at training start; missing or modified files
+    are already pruned by the Bun backend before this is called.
 
     Output layout:
         <output_dir>/dataset/
-            images/train/   ← all images merged
-            labels/train/   ← all labels merged
+            images/train/
+            labels/train/
             data.yaml
     """
     dataset_dir = output_dir / "dataset"
@@ -125,36 +124,28 @@ def build_dataset(asset_paths: list[str], class_map: list[str], output_dir: Path
     img_dir.mkdir(parents=True, exist_ok=True)
     lbl_dir.mkdir(parents=True, exist_ok=True)
 
-    for asset_path in asset_paths:
-        asset = Path(asset_path)
-        src_images = asset / "images"
-        src_labels = asset / "labels"
-
-        if not src_images.exists():
+    seen: set[str] = set()
+    for entry in images:
+        img_file = Path(entry["img"])
+        lbl_file = Path(entry["lbl"])
+        if not img_file.exists() or not lbl_file.exists():
             continue
 
-        for img_file in src_images.iterdir():
-            if not img_file.is_file():
-                continue
+        dest_name = img_file.name
+        # Avoid collisions across assets by prefixing with the asset folder name.
+        if dest_name in seen:
+            dest_name = f"{img_file.parent.parent.name}__{img_file.name}"
+        seen.add(dest_name)
 
-            dest_img = img_dir / img_file.name
-            # Avoid filename collisions across assets by prefixing with asset name.
-            if dest_img.exists():
-                dest_img = img_dir / f"{asset.name}__{img_file.name}"
-            shutil.copy2(img_file, dest_img)
-
-            # Copy corresponding label file.
-            lbl_file = src_labels / (img_file.stem + ".txt")
-            if lbl_file.exists():
-                dest_lbl = lbl_dir / dest_img.with_suffix(".txt").name
-                shutil.copy2(lbl_file, dest_lbl)
+        shutil.copy2(img_file, img_dir / dest_name)
+        shutil.copy2(lbl_file, lbl_dir / (Path(dest_name).stem + ".txt"))
 
     # Write data.yaml.
     data_yaml = dataset_dir / "data.yaml"
     yaml_content = {
         "path":  str(dataset_dir),
         "train": "images/train",
-        "val":   "images/train",   # use same split for now; proper split can be added later
+        "val":   "images/train",
         "nc":    len(class_map),
         "names": class_map,
     }
@@ -215,7 +206,7 @@ def main():
         emit({"type": "error", "message": f"Invalid config JSON: {e}"})
         sys.exit(1)
 
-    asset_paths  = config["assetPaths"]
+    images       = config["images"]             # locked snapshot: [{img, lbl, mtime}, ...]
     class_map    = config["classMap"]
     base_model   = config["baseModel"]          # e.g. "yolo26n"
     epochs       = int(config["epochs"])
@@ -226,9 +217,9 @@ def main():
 
     output_path.mkdir(parents=True, exist_ok=True)
 
-    # Build merged dataset.
+    # Build merged dataset from the locked image list.
     try:
-        data_yaml = build_dataset(asset_paths, class_map, output_path)
+        data_yaml = build_dataset(images, class_map, output_path)
     except Exception as e:
         emit({"type": "error", "message": f"Failed to build dataset: {e}"})
         sys.exit(1)

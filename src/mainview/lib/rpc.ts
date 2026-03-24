@@ -74,6 +74,16 @@ type RPCSchema = {
         params:   { outputPath: string };
         response: { lines: string[] };
       };
+      readRunMeta: {
+        params:   { outputPath: string };
+        response: {
+          found:         boolean;
+          classMap:      string[];
+          imageCount:    number;
+          newCount:      number;
+          modifiedCount: number;
+        };
+      };
       stopTraining: {
         params:   { runId: string };
         response: Record<string, never>;

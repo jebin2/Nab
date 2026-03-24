@@ -36,6 +36,40 @@ const server = Bun.serve({
 	},
 });
 
+// ── Dataset snapshot helpers ──────────────────────────────────────────────────
+
+type SnapEntry = { img: string; lbl: string; mtime: number };
+
+async function scanAnnotatedImages(assetPaths: string[]): Promise<SnapEntry[]> {
+	const result: SnapEntry[] = [];
+	for (const assetPath of assetPaths) {
+		const imagesDir = join(assetPath, "images");
+		const labelsDir = join(assetPath, "labels");
+		let entries; try { entries = await readdir(imagesDir, { withFileTypes: true }); } catch { continue; }
+		for (const entry of entries) {
+			if (!entry.isFile() || !IMAGE_EXTS.has(extname(entry.name).toLowerCase())) continue;
+			const lblPath = join(labelsDir, entry.name.slice(0, entry.name.lastIndexOf(".")) + ".txt");
+			const lblFile = Bun.file(lblPath);
+			if (!(await lblFile.exists())) continue;
+			if (!(await lblFile.text()).trim()) continue;   // empty file = no boxes drawn
+			const s = await stat(lblPath);
+			result.push({ img: join(imagesDir, entry.name), lbl: lblPath, mtime: Math.floor(s.mtimeMs / 1000) });
+		}
+	}
+	return result;
+}
+
+async function pruneSnapshot(images: SnapEntry[]): Promise<SnapEntry[]> {
+	const kept: SnapEntry[] = [];
+	for (const e of images) {
+		if (!(await Bun.file(e.lbl).exists())) continue;
+		const s = await stat(e.lbl);
+		if (Math.floor(s.mtimeMs / 1000) !== e.mtime) continue;
+		kept.push(e);
+	}
+	return kept;
+}
+
 // ── Recursive image collector ─────────────────────────────────────────────────
 
 async function collectImagePaths(dir: string): Promise<string[]> {
@@ -183,7 +217,26 @@ const rpc = defineElectrobunRPC("bun", {
 					await unlink(checkpointPath(config.outputPath)).catch(() => {});
 					await unlink(join(config.outputPath, "train.log")).catch(() => {});
 				}
-				const logPath = join(config.outputPath, "train.log");
+				const logPath  = join(config.outputPath, "train.log");
+				const metaPath = join(config.outputPath, "run-meta.json");
+
+				// Build or prune the locked image snapshot.
+				let images: SnapEntry[];
+				if (config.fresh) {
+					images = await scanAnnotatedImages(config.assetPaths);
+					await Bun.write(metaPath, JSON.stringify({ classMap: config.classMap, assetPaths: config.assetPaths, images }));
+				} else {
+					try {
+						const meta = JSON.parse(await Bun.file(metaPath).text());
+						images = await pruneSnapshot(meta.images ?? []);
+						await Bun.write(metaPath, JSON.stringify({ classMap: meta.classMap ?? config.classMap, assetPaths: meta.assetPaths ?? config.assetPaths, images }));
+					} catch {
+						// No meta yet (run predates this feature) — build fresh snapshot.
+						images = await scanAnnotatedImages(config.assetPaths);
+						await Bun.write(metaPath, JSON.stringify({ classMap: config.classMap, assetPaths: config.assetPaths, images }));
+					}
+				}
+
 				await appendFile(logPath, JSON.stringify({ type: "start", timestamp: new Date().toISOString(), config }) + "\n");
 
 				const venvPython = await prepareEnvironment(logPath, config.id);
@@ -191,7 +244,8 @@ const rpc = defineElectrobunRPC("bun", {
 
 				const proc = Bun.spawn([venvPython, TRAIN_SCRIPT], { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
 				runningProcesses.set(config.id, proc);
-				proc.stdin.write(JSON.stringify(config));
+				// Pass locked image list to Python instead of raw assetPaths.
+				proc.stdin.write(JSON.stringify({ ...config, images }));
 				proc.stdin.end();
 
 				streamProcessOutput(proc, {
@@ -209,6 +263,34 @@ const rpc = defineElectrobunRPC("bun", {
 					const content = await Bun.file(logPath).text();
 					return { lines: content.split("\n").filter(l => l.trim()) };
 				} catch { return { lines: [] }; }
+			},
+
+			readRunMeta: async ({ outputPath }: { outputPath: string }) => {
+				const EMPTY = { found: false, classMap: [] as string[], imageCount: 0, newCount: 0, modifiedCount: 0 };
+				try {
+					const meta = JSON.parse(await Bun.file(join(outputPath, "run-meta.json")).text());
+					const snap = new Map<string, number>(
+						(meta.images ?? []).map((e: SnapEntry) => [e.img, e.mtime])
+					);
+					let newCount = 0, modifiedCount = 0;
+					for (const assetPath of (meta.assetPaths ?? [])) {
+						const imagesDir = join(assetPath, "images");
+						const labelsDir = join(assetPath, "labels");
+						let entries; try { entries = await readdir(imagesDir, { withFileTypes: true }); } catch { continue; }
+						for (const entry of entries) {
+							if (!entry.isFile() || !IMAGE_EXTS.has(extname(entry.name).toLowerCase())) continue;
+							const lblPath = join(labelsDir, entry.name.slice(0, entry.name.lastIndexOf(".")) + ".txt");
+							const _lf = Bun.file(lblPath);
+							if (!(await _lf.exists())) continue;
+							if (!(await _lf.text()).trim()) continue;   // empty = unannotated
+							const imgPath = join(imagesDir, entry.name);
+							if (!snap.has(imgPath)) { newCount++; continue; }
+							const s = await stat(lblPath);
+							if (Math.floor(s.mtimeMs / 1000) !== snap.get(imgPath)) modifiedCount++;
+						}
+					}
+					return { found: true, classMap: meta.classMap ?? [], imageCount: snap.size, newCount, modifiedCount };
+				} catch { return EMPTY; }
 			},
 
 			runInference: async ({ imagePath, outputPath, confidence }: {
