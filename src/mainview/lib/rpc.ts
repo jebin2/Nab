@@ -116,10 +116,6 @@ type RPCSchema = {
         params:   { folderPath: string };
         response: Record<string, never>;
       };
-      revealInFilesystem: {
-        params:   { path: string };
-        response: Record<string, never>;
-      };
       runInference: {
         params: { imagePath: string; outputPath: string; confidence: number };
         response: {

@@ -389,6 +389,7 @@ const rpc = defineElectrobunRPC("bun", {
 						[process.execPath, "build", "--compile", "--minify", "--bytecode", join(buildDir, "cli.ts"), "--outfile", outBinary],
 						{ stdout: "pipe", stderr: "pipe" },
 					);
+					runningProcesses.set(runId, proc);
 					let stderr = "";
 					for await (const chunk of proc.stderr) stderr += new TextDecoder().decode(chunk);
 					const exitCode = await proc.exited;
@@ -452,7 +453,9 @@ const rpc = defineElectrobunRPC("bun", {
 					const dirName  = basename(exportedPath);
 					const zipPath  = join(parent, `${dirName}.zip`);
 					const proc     = Bun.spawn(["zip", "-r", "-q", zipPath, dirName], { cwd: parent, stdout: "pipe", stderr: "pipe" });
+					runningProcesses.set(runId, proc);
 					const exitCode = await proc.exited;
+					runningProcesses.delete(runId);
 					if (exitCode !== 0) return { filePath: "", filename: "", error: "Failed to create zip archive for export." };
 					return { filePath: zipPath, filename: `${destName}.zip`, error: null };
 				}
@@ -477,15 +480,6 @@ const rpc = defineElectrobunRPC("bun", {
 				try {
 					await rm(folderPath.replace(/^~/, process.env.HOME ?? ""), { recursive: true, force: true });
 				} catch {}
-				return {};
-			},
-
-			revealInFilesystem: async ({ path }: { path: string }) => {
-				const dir = path.split("/").slice(0, -1).join("/") || "/";
-				const cmd = process.platform === "darwin"
-					? ["open", "-R", path]
-					: process.platform === "win32" ? ["explorer", `/select,${path}`] : ["xdg-open", dir];
-				Bun.spawn(cmd);
 				return {};
 			},
 
