@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { Plus, FolderOpen, Cpu, Play, Pause, Square, Trash2, Terminal } from "lucide-react";
+import { Plus, FolderOpen, Cpu, Play, Pause, Square, Trash2, Terminal, ChevronDown } from "lucide-react";
 import DetailPageHeader, { HeaderBtn } from "../components/DetailPageHeader";
 import { type TrainingRun, type Asset } from "../lib/types";
 import { RUN_STATUS_LABELS, RUN_STATUS_COLORS, BASE_MODELS, DEVICES, CLASS_COLORS } from "../lib/constants";
@@ -236,7 +236,7 @@ export default function Train({ assets, runs, onRunsChange }: Props) {
       </div>
 
       {showModal && (
-        <NewRunModal assets={assets} onClose={() => setShowModal(false)} onCreate={handleCreate} />
+        <NewRunModal assets={assets} runs={runs} onClose={() => setShowModal(false)} onCreate={handleCreate} />
       )}
     </div>
   );
@@ -869,6 +869,74 @@ function LogLine({ line }: { line: string }) {
   return <div style={{ color: "var(--text-muted)", marginBottom: 1 }}>{line}</div>;
 }
 
+// ── CustomSelect ───────────────────────────────────────────────────────────────
+
+function CustomSelect({ value, options, onChange }: {
+  value: string;
+  options: string[];
+  onChange: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        style={{
+          ...selectStyle,
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          cursor: "pointer", textAlign: "left",
+        }}
+      >
+        <span>{value}</span>
+        <ChevronDown size={13} style={{ flexShrink: 0, opacity: 0.6, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
+      </button>
+      {open && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 200,
+          background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6,
+          boxShadow: "0 8px 24px rgba(0,0,0,0.4)", overflow: "hidden",
+        }}>
+          {options.map(opt => (
+            <div
+              key={opt}
+              onClick={() => { onChange(opt); setOpen(false); }}
+              style={{
+                padding: "8px 10px", fontSize: 13, cursor: "pointer",
+                color: opt === value ? "var(--accent)" : "var(--text)",
+                background: opt === value ? "rgba(59,130,246,0.08)" : "transparent",
+                transition: "background 0.1s",
+              }}
+              onMouseEnter={e => { if (opt !== value) (e.currentTarget as HTMLDivElement).style.background = "var(--bg)"; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = opt === value ? "rgba(59,130,246,0.08)" : "transparent"; }}
+            >
+              {opt}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const selectStyle: React.CSSProperties = {
+  width: "100%", padding: "8px 10px", borderRadius: 6,
+  border: "1px solid var(--border)", background: "var(--bg)",
+  color: "var(--text)", fontSize: 13, fontFamily: "inherit",
+  outline: "none", boxSizing: "border-box",
+};
+
 // ── NewRunModal ────────────────────────────────────────────────────────────────
 
 const DEFAULT_EPOCHS = 100;
@@ -876,8 +944,9 @@ const DEFAULT_BATCH  = 16;
 const DEFAULT_IMGSZ  = 640;
 const DEFAULT_DEVICE = "auto";
 
-function NewRunModal({ assets, onClose, onCreate }: {
+function NewRunModal({ assets, runs, onClose, onCreate }: {
   assets: Asset[];
+  runs: TrainingRun[];
   onClose: () => void;
   onCreate: (run: TrainingRun) => void;
 }) {
@@ -892,6 +961,10 @@ function NewRunModal({ assets, onClose, onCreate }: {
   const [outputPath, setOutputPath]         = useState("");
   const [outputEdited, setOutputEdited]     = useState(false);
   const [picking, setPicking]               = useState(false);
+
+  const nameConflict = name.trim()
+    ? runs.some(r => r.name.toLowerCase() === name.trim().toLowerCase())
+    : false;
 
   // Merged class list: stable insertion order, deduplicated, recomputed only when selection changes.
   const classMap = useMemo(() => [...new Map(
@@ -934,7 +1007,7 @@ function NewRunModal({ assets, onClose, onCreate }: {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim() || selectedAssets.length === 0 || !outputPath.trim()) return;
+    if (!name.trim() || selectedAssets.length === 0 || !outputPath.trim() || nameConflict) return;
     onCreate({
       id:         crypto.randomUUID(),
       name:       name.trim(),
@@ -951,7 +1024,7 @@ function NewRunModal({ assets, onClose, onCreate }: {
     });
   }
 
-  const valid = name.trim() && selectedAssets.length > 0 && outputPath.trim();
+  const valid = name.trim() && selectedAssets.length > 0 && outputPath.trim() && !nameConflict;
 
   return (
     <div
@@ -980,8 +1053,13 @@ function NewRunModal({ assets, onClose, onCreate }: {
                 value={name}
                 onChange={e => handleNameChange(e.target.value)}
                 placeholder="e.g. vehicles-yolo26n-v1"
-                style={{ ...inputStyle, fontFamily: "monospace" }}
+                style={{ ...inputStyle, fontFamily: "monospace", borderColor: nameConflict ? "#EF4444" : undefined }}
               />
+              {nameConflict && (
+                <div style={{ fontSize: 11, color: "#EF4444", marginTop: 4 }}>
+                  A run with this name already exists.
+                </div>
+              )}
             </Field>
 
             <Field label="Assets">
@@ -1043,9 +1121,7 @@ function NewRunModal({ assets, onClose, onCreate }: {
             )}
 
             <Field label="Base Model">
-              <select value={baseModel} onChange={e => setBaseModel(e.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
-                {BASE_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
-              </select>
+              <CustomSelect value={baseModel} options={BASE_MODELS} onChange={setBaseModel} />
             </Field>
 
             <Field label="Hyperparameters">
@@ -1055,9 +1131,7 @@ function NewRunModal({ assets, onClose, onCreate }: {
                 <NumField label="Image Size" value={imgsz}     min={32}  max={1280}  onChange={setImgsz} />
                 <div>
                   <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>Device</div>
-                  <select value={device} onChange={e => setDevice(e.target.value)} style={{ ...inputStyle, padding: "6px 10px", cursor: "pointer" }}>
-                    {DEVICES.map(d => <option key={d} value={d}>{d}</option>)}
-                  </select>
+                  <CustomSelect value={device} options={DEVICES} onChange={setDevice} />
                 </div>
               </div>
             </Field>

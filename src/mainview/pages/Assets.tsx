@@ -86,7 +86,7 @@ export default function Assets({ assets, onAssetsChange, onOpenAsset }: Props) {
       </div>
 
       {showModal && (
-        <NewAssetModal onClose={() => setShowModal(false)} onCreate={handleCreate} />
+        <NewAssetModal assets={assets} onClose={() => setShowModal(false)} onCreate={handleCreate} />
       )}
     </div>
   );
@@ -215,13 +215,27 @@ function MetaStat({ icon: Icon, label, title }: { icon: React.ElementType; label
 
 // ── NewAssetModal ──────────────────────────────────────────────────────────────
 
-function NewAssetModal({ onClose, onCreate }: {
+function NewAssetModal({ assets, onClose, onCreate }: {
+  assets: Asset[];
   onClose: () => void;
   onCreate: (name: string, storagePath: string) => void;
 }) {
   const [name, setName]               = useState("");
   const [storagePath, setStoragePath] = useState("");
+  const [pathEdited, setPathEdited]   = useState(false);
   const [picking, setPicking]         = useState(false);
+
+  const nameConflict = name.trim()
+    ? assets.some(a => a.name.toLowerCase() === name.trim().toLowerCase())
+    : false;
+
+  function handleNameChange(val: string) {
+    setName(val);
+    if (!pathEdited) {
+      const slug = val.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+      setStoragePath(slug ? `~/.yolostudio/assets/${slug}` : "");
+    }
+  }
 
   async function pickFolder() {
     setPicking(true);
@@ -229,6 +243,7 @@ function NewAssetModal({ onClose, onCreate }: {
       const { canceled, path } = await getRPC().request.openFolderPathDialog({});
       if (!canceled && path) {
         setStoragePath(path);
+        setPathEdited(true);
         if (!name.trim()) {
           const folderName = path.split("/").filter(Boolean).pop() ?? "";
           setName(folderName);
@@ -241,7 +256,7 @@ function NewAssetModal({ onClose, onCreate }: {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim() || !storagePath.trim()) return;
+    if (!name.trim() || !storagePath.trim() || nameConflict) return;
     onCreate(name.trim(), storagePath.trim());
   }
 
@@ -268,18 +283,23 @@ function NewAssetModal({ onClose, onCreate }: {
             <input
               autoFocus
               value={name}
-              onChange={e => setName(e.target.value)}
+              onChange={e => handleNameChange(e.target.value)}
               placeholder="e.g. Vehicles, PCB Defects"
-              style={inputStyle}
+              style={{ ...inputStyle, borderColor: nameConflict ? "#EF4444" : undefined }}
             />
+            {nameConflict && (
+              <div style={{ fontSize: 11, color: "#EF4444", marginTop: 4 }}>
+                An asset with this name already exists.
+              </div>
+            )}
           </Field>
 
           <Field label="Storage Folder">
             <div style={{ display: "flex", gap: 8 }}>
               <input
                 value={storagePath}
-                onChange={e => setStoragePath(e.target.value)}
-                placeholder="~/YOLOStudio/assets/my-asset"
+                onChange={e => { setStoragePath(e.target.value); setPathEdited(true); }}
+                placeholder="~/.yolostudio/assets/my-asset"
                 style={{ ...inputStyle, flex: 1, fontFamily: "monospace", fontSize: 11 }}
               />
               <button
@@ -312,13 +332,13 @@ function NewAssetModal({ onClose, onCreate }: {
             </button>
             <button
               type="submit"
-              disabled={!name.trim() || !storagePath.trim()}
+              disabled={!name.trim() || !storagePath.trim() || nameConflict}
               style={{
                 flex: 1, padding: "9px", borderRadius: 7, border: "none",
-                background: name.trim() && storagePath.trim() ? "var(--accent)" : "var(--border)",
-                color: name.trim() && storagePath.trim() ? "#fff" : "var(--text-muted)",
+                background: name.trim() && storagePath.trim() && !nameConflict ? "var(--accent)" : "var(--border)",
+                color: name.trim() && storagePath.trim() && !nameConflict ? "#fff" : "var(--text-muted)",
                 fontSize: 13, fontWeight: 600,
-                cursor: name.trim() && storagePath.trim() ? "pointer" : "not-allowed",
+                cursor: name.trim() && storagePath.trim() && !nameConflict ? "pointer" : "not-allowed",
                 fontFamily: "inherit",
               }}
             >
