@@ -20,14 +20,14 @@ const FORMATS: FormatDef[] = [
   { id: "pt",       label: "PyTorch (.pt)",      desc: "Full precision floating point weights. Best for fine-tuning and retraining.",                                  Icon: Package    },
   { id: "onnx",     label: "ONNX (.onnx)",        desc: "Universal interoperability format. Highly optimized for CPU inference.",                                       Icon: GitMerge   },
   { id: "tflite",   label: "TFLite (.tflite)",    desc: "Mobile deployment. Quantized to INT8 for edge devices.",          note: "First export installs deps (~50 MB)", Icon: Smartphone },
-  { id: "coreml",   label: "CoreML (.mlpackage)", desc: "Optimized for Apple Neural Engine (ANE). macOS/iOS only.",                                                    Icon: Monitor    },
+  { id: "coreml",   label: "CoreML",               desc: "Optimized for Apple Neural Engine (ANE). macOS/iOS only.",                                                    Icon: Monitor    },
   { id: "openvino", label: "OpenVINO",            desc: "Intel hardware acceleration. Optimized for Intel CPUs and GPUs.", note: "First export installs deps (~30 MB)", Icon: Cpu        },
 ];
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
 type DownloadOp =
-  | { id: string; label: string; kind: "format"; outputPath: string; format: string }
+  | { id: string; label: string; kind: "format"; outputPath: string; format: string; runName: string }
   | { id: "cli";  label: string; kind: "cli";    outputPath: string; runName: string };
 
 interface DownloadModal {
@@ -75,7 +75,7 @@ export default function Export({ runs }: Props) {
     try {
       const res = op.kind === "cli"
         ? await getRPC().request.buildAndDownloadCLI({ outputPath: op.outputPath, runName: op.runName, runId })
-        : await getRPC().request.downloadExport({ outputPath: op.outputPath, format: op.format, runId });
+        : await getRPC().request.downloadExport({ outputPath: op.outputPath, format: op.format, runName: op.runName, runId });
       if (res.error) {
         setDlModal(prev => ({ ...prev, status: "error", error: res.error! }));
       } else {
@@ -159,7 +159,7 @@ export default function Export({ runs }: Props) {
                 fmt={fmt}
                 disabled={!selectedRun || (dlModal.open && dlModal.formatId === fmt.id)}
                 isLast={i === FORMATS.length - 1}
-                onDownload={() => handleDownload({ id: fmt.id, label: fmt.label, kind: "format", outputPath: selectedRun!.outputPath, format: fmt.id })}
+                onDownload={() => handleDownload({ id: fmt.id, label: fmt.label, kind: "format", outputPath: selectedRun!.outputPath, format: fmt.id, runName: selectedRun!.name })}
               />
             ))}
           </div>
@@ -203,10 +203,10 @@ export default function Export({ runs }: Props) {
                   marginBottom: 20, border: "1px solid #2E2E2E",
                 }}>
                   <span style={{ color: "#6B7280" }}>$ </span>
-                  <span>{selectedRun ? `${selectedRun.name.replace(/[^a-zA-Z0-9_-]/g, "_")}-detect` : "detect"} photo.jpg</span>
+                  <span>{selectedRun ? `${selectedRun.name.replace(/[^a-zA-Z0-9_-]/g, "_")}-cli` : "model-cli"} photo.jpg</span>
                   <br />
                   <span style={{ color: "#6B7280" }}>$ </span>
-                  <span>{selectedRun ? `${selectedRun.name.replace(/[^a-zA-Z0-9_-]/g, "_")}-detect` : "detect"} photo.jpg --conf 0.7 --output_path out.json</span>
+                  <span>{selectedRun ? `${selectedRun.name.replace(/[^a-zA-Z0-9_-]/g, "_")}-cli` : "model-cli"} photo.jpg --conf 0.7 --output_path out.json</span>
                 </div>
 
                 <DownloadButton

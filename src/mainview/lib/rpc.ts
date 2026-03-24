@@ -95,7 +95,7 @@ type RPCSchema = {
         response: Record<string, never>;
       };
       downloadExport: {
-        params:   { outputPath: string; format: string; runId: string };
+        params:   { outputPath: string; format: string; runName: string; runId: string };
         response: { savedPath: string; error: string | null };
       };
       downloadFile: {

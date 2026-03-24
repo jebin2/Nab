@@ -255,7 +255,7 @@ const rpc = defineElectrobunRPC("bun", {
 					return { savedPath: "", error: "Model weights not found." };
 
 				const safeName    = runName.replace(/[^a-zA-Z0-9_-]/g, "_");
-				const binaryName  = `${safeName}-detect${process.platform === "win32" ? ".exe" : ""}`;
+				const binaryName  = `${safeName}-cli${process.platform === "win32" ? ".exe" : ""}`;
 				const downloadsDir = join(homedir(), "Downloads");
 				await mkdir(downloadsDir, { recursive: true });
 				const outBinary   = join(downloadsDir, binaryName);
@@ -328,7 +328,7 @@ const rpc = defineElectrobunRPC("bun", {
 				return {};
 			},
 
-		downloadExport: async ({ outputPath, format, runId }: { outputPath: string; format: string; runId: string }) => {
+		downloadExport: async ({ outputPath, format, runName, runId }: { outputPath: string; format: string; runName: string; runId: string }) => {
 				const modelPath = join(outputPath, "weights", "weights", "best.pt");
 				if (!(await Bun.file(modelPath).exists()))
 					return { savedPath: "", error: "Model weights not found." };
@@ -354,10 +354,20 @@ const rpc = defineElectrobunRPC("bun", {
 					}
 				}
 
+				const FORMAT_EXT: Record<string, string> = {
+					pt:       ".pt",
+					onnx:     ".onnx",
+					tflite:   ".tflite",
+					coreml:   "",
+					openvino: "",
+				};
+				const safeName = runName.replace(/[^a-zA-Z0-9_-]/g, "_");
+				const ext      = FORMAT_EXT[format] ?? extname(exportedPath);
+				const destName = ext ? `${safeName}${ext}` : `${safeName}_${format}`;
 				const downloadsDir = join(homedir(), "Downloads");
 				await mkdir(downloadsDir, { recursive: true });
-				const destPath = join(downloadsDir, basename(exportedPath));
-				const srcStat  = await stat(exportedPath);
+				const destPath   = join(downloadsDir, destName);
+				const srcStat    = await stat(exportedPath);
 				if (srcStat.isDirectory()) {
 					await cp(exportedPath, destPath, { recursive: true });
 				} else {
