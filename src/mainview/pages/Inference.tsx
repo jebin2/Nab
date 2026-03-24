@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Upload, ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
+import { Upload, ZoomIn, ZoomOut, Maximize2, RotateCcw } from "lucide-react";
 import { type TrainingRun } from "../lib/types";
 import { CLASS_COLORS } from "../lib/constants";
 import { getRPC, getBridgeUrl } from "../lib/rpc";
@@ -46,7 +46,17 @@ function letterboxRect(
 // ── component ─────────────────────────────────────────────────────────────────
 
 export default function Inference({ runs }: Props) {
-  const doneRuns = runs.filter(r => r.status === "done");
+  const allDoneRuns = runs.filter(r => r.status === "done");
+  const [readyIds, setReadyIds] = useState<Set<string> | null>(null);
+
+  useEffect(() => {
+    if (allDoneRuns.length === 0) { setReadyIds(new Set()); return; }
+    getRPC().request.checkWeights({ outputPaths: allDoneRuns.map(r => r.outputPath) })
+      .then(({ results }) => setReadyIds(new Set(allDoneRuns.filter(r => results[r.outputPath]).map(r => r.id))))
+      .catch(() => setReadyIds(new Set(allDoneRuns.map(r => r.id))));
+  }, [runs]);
+
+  const doneRuns = readyIds ? allDoneRuns.filter(r => readyIds.has(r.id)) : allDoneRuns;
 
   const [selectedRunId, setSelectedRunId] = useState<string | null>(doneRuns[0]?.id ?? null);
   const [imagePath,     setImagePath]     = useState<string | null>(null);
@@ -66,10 +76,12 @@ export default function Inference({ runs }: Props) {
 
   const selectedRun = doneRuns.find(r => r.id === selectedRunId) ?? null;
 
-  // Auto-select first done run when list changes.
+  // Auto-select first ready run; deselect if current run's weights disappear.
   useEffect(() => {
-    if (!selectedRunId && doneRuns.length > 0) setSelectedRunId(doneRuns[0].id);
-  }, [runs]);
+    if (doneRuns.length === 0) { setSelectedRunId(null); return; }
+    if (!selectedRunId || !doneRuns.find(r => r.id === selectedRunId))
+      setSelectedRunId(doneRuns[0].id);
+  }, [doneRuns]);
 
   // Track viewport container size for letterbox math.
   useEffect(() => {
@@ -294,8 +306,15 @@ export default function Inference({ runs }: Props) {
               }}>
                 <ToolBtn title="Zoom in"  onClick={() => setZoom(z => Math.min(z + 0.25, 4))}><ZoomIn  size={16} /></ToolBtn>
                 <ToolBtn title="Zoom out" onClick={() => setZoom(z => Math.max(z - 0.25, 0.5))}><ZoomOut size={16} /></ToolBtn>
-                <div style={{ width: 1, height: 14, background: "rgba(255,255,255,0.15)", margin: "0 2px" }} />
                 <ToolBtn title="Reset zoom" onClick={() => setZoom(1)}><Maximize2 size={16} /></ToolBtn>
+                {(inferenceMs != null || error) && !inferring && selectedRun && (
+                  <>
+                    <div style={{ width: 1, height: 14, background: "rgba(255,255,255,0.15)", margin: "0 2px" }} />
+                    <ToolBtn title="Run again" onClick={() => doInference(imagePath!, selectedRun.outputPath, debouncedConf)}>
+                      <RotateCcw size={15} />
+                    </ToolBtn>
+                  </>
+                )}
               </div>
             )}
           </div>

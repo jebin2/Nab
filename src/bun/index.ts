@@ -293,6 +293,14 @@ const rpc = defineElectrobunRPC("bun", {
 				} catch { return EMPTY; }
 			},
 
+			checkWeights: async ({ outputPaths }: { outputPaths: string[] }) => {
+				const results: Record<string, boolean> = {};
+				await Promise.all(outputPaths.map(async p => {
+					results[p] = await Bun.file(join(p, "weights", "weights", "best.pt")).exists();
+				}));
+				return { results };
+			},
+
 			runInference: async ({ imagePath, outputPath, confidence }: {
 				imagePath: string; outputPath: string; confidence: number;
 			}) => {

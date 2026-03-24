@@ -116,6 +116,10 @@ type RPCSchema = {
         params:   { folderPath: string };
         response: Record<string, never>;
       };
+      checkWeights: {
+        params:   { outputPaths: string[] };
+        response: { results: Record<string, boolean> };
+      };
       runInference: {
         params: { imagePath: string; outputPath: string; confidence: number };
         response: {
