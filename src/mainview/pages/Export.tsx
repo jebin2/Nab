@@ -4,7 +4,7 @@ import {
   Terminal, CheckCircle, AlertCircle, Download, X, Loader,
 } from "lucide-react";
 import { type TrainingRun } from "../lib/types";
-import { getRPC } from "../lib/rpc";
+import { getRPC, getBridgeUrl } from "../lib/rpc";
 
 // ── format definitions ────────────────────────────────────────────────────────
 
@@ -31,13 +31,13 @@ type DownloadOp =
   | { id: "cli";  label: string; kind: "cli";    outputPath: string; runName: string };
 
 interface DownloadModal {
-  open:      boolean;
-  formatId:  string;
-  runId:     string;
-  label:     string;
-  status:    "loading" | "done" | "error";
-  savedPath: string;
-  error:     string;
+  open:     boolean;
+  formatId: string;
+  runId:    string;
+  label:    string;
+  status:   "loading" | "done" | "error";
+  filename: string;
+  error:    string;
 }
 
 interface Props {
@@ -45,7 +45,7 @@ interface Props {
 }
 
 const MODAL_CLOSED: DownloadModal = {
-  open: false, formatId: "", runId: "", label: "", status: "loading", savedPath: "", error: "",
+  open: false, formatId: "", runId: "", label: "", status: "loading", filename: "", error: "",
 };
 
 // ── component ─────────────────────────────────────────────────────────────────
@@ -71,7 +71,7 @@ export default function Export({ runs }: Props) {
 
   async function handleDownload(op: DownloadOp) {
     const runId = crypto.randomUUID();
-    setDlModal({ open: true, formatId: op.id, runId, label: op.label, status: "loading", savedPath: "", error: "" });
+    setDlModal({ open: true, formatId: op.id, runId, label: op.label, status: "loading", filename: "", error: "" });
     try {
       const res = op.kind === "cli"
         ? await getRPC().request.buildAndDownloadCLI({ outputPath: op.outputPath, runName: op.runName, runId })
@@ -79,7 +79,22 @@ export default function Export({ runs }: Props) {
       if (res.error) {
         setDlModal(prev => ({ ...prev, status: "error", error: res.error! }));
       } else {
-        setDlModal(prev => ({ ...prev, status: "done", savedPath: res.savedPath }));
+        // Fetch the file through the bridge server and download it via a blob URL.
+        // We use fetch+blob instead of a direct <a href> because GTKWebKit treats
+        // http:// anchor clicks as navigation events; blob: URLs are handled inline.
+        const url      = getBridgeUrl(res.filePath);
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
+        const blob    = await response.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const a       = document.createElement("a");
+        a.href     = blobUrl;
+        a.download = res.filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
+        setDlModal(prev => ({ ...prev, status: "done", filename: res.filename }));
       }
     } catch (e) {
       setDlModal(prev => ({ ...prev, status: "error", error: String(e) }));
@@ -93,7 +108,7 @@ export default function Export({ runs }: Props) {
         <DownloadModalOverlay
           label={dlModal.label}
           status={dlModal.status}
-          savedPath={dlModal.savedPath}
+          filename={dlModal.filename}
           error={dlModal.error}
           onClose={() => closeDlModal(dlModal)}
         />
@@ -327,15 +342,13 @@ function FormatRow({ fmt, disabled, isLast, onDownload }: {
   );
 }
 
-function DownloadModalOverlay({ label, status, savedPath, error, onClose }: {
-  label:     string;
-  status:    "loading" | "done" | "error";
-  savedPath: string;
-  error:     string;
-  onClose:   () => void;
+function DownloadModalOverlay({ label, status, filename, error, onClose }: {
+  label:    string;
+  status:   "loading" | "done" | "error";
+  filename: string;
+  error:    string;
+  onClose:  () => void;
 }) {
-  const filename = savedPath ? savedPath.split("/").pop() : "";
-  const folder   = savedPath ? savedPath.split("/").slice(0, -1).join("/") : "";
 
   return (
     <div style={{
@@ -381,7 +394,7 @@ function DownloadModalOverlay({ label, status, savedPath, error, onClose }: {
             <div style={{ fontSize: 13, fontFamily: "monospace", fontWeight: 600, color: "var(--text)", wordBreak: "break-all" }}>
               {filename}
             </div>
-            <div style={{ fontSize: 11, color: "var(--text-muted)", wordBreak: "break-all" }}>{folder}</div>
+            <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Saved to your Downloads folder</div>
           </>
         )}
 

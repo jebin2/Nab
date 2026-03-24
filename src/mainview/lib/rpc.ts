@@ -84,7 +84,7 @@ type RPCSchema = {
       };
       buildAndDownloadCLI: {
         params:   { outputPath: string; runName: string; runId: string };
-        response: { savedPath: string; error: string | null };
+        response: { filePath: string; filename: string; error: string | null };
       };
       exportCLI: {
         params:   { outputPath: string; runName: string; destDir: string };
@@ -96,7 +96,7 @@ type RPCSchema = {
       };
       downloadExport: {
         params:   { outputPath: string; format: string; runName: string; runId: string };
-        response: { savedPath: string; error: string | null };
+        response: { filePath: string; filename: string; error: string | null };
       };
       downloadFile: {
         params:   { srcPath: string };

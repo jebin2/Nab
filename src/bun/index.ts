@@ -1,6 +1,6 @@
 import Electrobun, { BrowserWindow, defineElectrobunRPC } from "electrobun/bun";
 import { readdir, mkdir, copyFile, cp, appendFile, unlink, rm, mkdtemp, stat } from "fs/promises";
-import { join, extname, basename } from "path";
+import { join, extname, basename, dirname } from "path";
 import { randomBytes } from "crypto";
 import { homedir, tmpdir } from "os";
 import {
@@ -252,13 +252,11 @@ const rpc = defineElectrobunRPC("bun", {
 			buildAndDownloadCLI: async ({ outputPath, runName, runId }: { outputPath: string; runName: string; runId: string }) => {
 				const modelPath = join(outputPath, "weights", "weights", "best.pt");
 				if (!(await Bun.file(modelPath).exists()))
-					return { savedPath: "", error: "Model weights not found." };
+					return { filePath: "", filename: "", error: "Model weights not found." };
 
-				const safeName    = runName.replace(/[^a-zA-Z0-9_-]/g, "_");
-				const binaryName  = `${safeName}-cli${process.platform === "win32" ? ".exe" : ""}`;
-				const downloadsDir = join(homedir(), "Downloads");
-				await mkdir(downloadsDir, { recursive: true });
-				const outBinary   = join(downloadsDir, binaryName);
+				const safeName   = runName.replace(/[^a-zA-Z0-9_-]/g, "_");
+				const binaryName = `${safeName}-cli${process.platform === "win32" ? ".exe" : ""}`;
+				const outBinary  = join(tmpdir(), binaryName);
 
 				const buildDir = await mkdtemp(join(tmpdir(), "yolostudio-cli-"));
 				try {
@@ -278,12 +276,12 @@ const rpc = defineElectrobunRPC("bun", {
 					const exitCode = await proc.exited;
 					runningProcesses.delete(runId);
 					if (exitCode !== 0)
-						return { savedPath: "", error: `Compile failed: ${stderr.trim().split("\n").pop()}` };
+						return { filePath: "", filename: "", error: `Compile failed: ${stderr.trim().split("\n").pop()}` };
 				} finally {
 					await rm(buildDir, { recursive: true, force: true }).catch(() => {});
 				}
 
-				return { savedPath: outBinary, error: null };
+				return { filePath: outBinary, filename: binaryName, error: null };
 			},
 
 		exportCLI: async ({ outputPath, runName, destDir }: {
@@ -331,7 +329,7 @@ const rpc = defineElectrobunRPC("bun", {
 		downloadExport: async ({ outputPath, format, runName, runId }: { outputPath: string; format: string; runName: string; runId: string }) => {
 				const modelPath = join(outputPath, "weights", "weights", "best.pt");
 				if (!(await Bun.file(modelPath).exists()))
-					return { savedPath: "", error: "Model weights not found." };
+					return { filePath: "", filename: "", error: "Model weights not found." };
 
 				let exportedPath: string;
 
@@ -346,11 +344,11 @@ const rpc = defineElectrobunRPC("bun", {
 					const line = stdout.trim().split("\n").filter(Boolean).pop() ?? "";
 					try {
 						const data = JSON.parse(line);
-						if (data.error) return { savedPath: "", error: data.error };
+						if (data.error) return { filePath: "", filename: "", error: data.error };
 						exportedPath = data.exportedPath;
 					} catch {
 						const hint = stderr.trim().split("\n").filter(Boolean).pop() ?? "";
-						return { savedPath: "", error: `Export failed.${hint ? ` ${hint}` : ""}` };
+						return { filePath: "", filename: "", error: `Export failed.${hint ? ` ${hint}` : ""}` };
 					}
 				}
 
@@ -364,16 +362,20 @@ const rpc = defineElectrobunRPC("bun", {
 				const safeName = runName.replace(/[^a-zA-Z0-9_-]/g, "_");
 				const ext      = FORMAT_EXT[format] ?? extname(exportedPath);
 				const destName = ext ? `${safeName}${ext}` : `${safeName}_${format}`;
-				const downloadsDir = join(homedir(), "Downloads");
-				await mkdir(downloadsDir, { recursive: true });
-				const destPath   = join(downloadsDir, destName);
-				const srcStat    = await stat(exportedPath);
+
+				const srcStat = await stat(exportedPath);
 				if (srcStat.isDirectory()) {
-					await cp(exportedPath, destPath, { recursive: true });
-				} else {
-					await copyFile(exportedPath, destPath);
+					// Zip the directory so the bridge server can serve it as a single file.
+					const parent   = dirname(exportedPath);
+					const dirName  = basename(exportedPath);
+					const zipPath  = join(parent, `${dirName}.zip`);
+					const proc     = Bun.spawn(["zip", "-r", "-q", zipPath, dirName], { cwd: parent, stdout: "pipe", stderr: "pipe" });
+					const exitCode = await proc.exited;
+					if (exitCode !== 0) return { filePath: "", filename: "", error: "Failed to create zip archive for export." };
+					return { filePath: zipPath, filename: `${destName}.zip`, error: null };
 				}
-				return { savedPath: destPath, error: null };
+
+				return { filePath: exportedPath, filename: destName, error: null };
 			},
 
 		downloadFile: async ({ srcPath }: { srcPath: string }) => {
