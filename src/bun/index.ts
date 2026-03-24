@@ -267,7 +267,7 @@ const rpc = defineElectrobunRPC("bun", {
 					await copyFile(YOLO_UTILS_SCRIPT, join(buildDir, "yolo_utils.py"));
 
 					const proc = Bun.spawn(
-						[process.execPath, "build", "--compile", join(buildDir, "cli.ts"), "--outfile", outBinary],
+						[process.execPath, "build", "--compile", "--minify", "--bytecode", join(buildDir, "cli.ts"), "--outfile", outBinary],
 						{ stdout: "pipe", stderr: "pipe" },
 					);
 					runningProcesses.set(runId, proc);
@@ -304,7 +304,7 @@ const rpc = defineElectrobunRPC("bun", {
 					await copyFile(YOLO_UTILS_SCRIPT, join(buildDir, "yolo_utils.py"));
 
 					const proc = Bun.spawn(
-						[process.execPath, "build", "--compile", join(buildDir, "cli.ts"), "--outfile", outBinary],
+						[process.execPath, "build", "--compile", "--minify", "--bytecode", join(buildDir, "cli.ts"), "--outfile", outBinary],
 						{ stdout: "pipe", stderr: "pipe" },
 					);
 					let stderr = "";
