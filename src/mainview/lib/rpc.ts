@@ -82,9 +82,21 @@ type RPCSchema = {
         params:   { outputPath: string; format: string };
         response: { exportedPath: string; fileSize: number; error: string | null };
       };
+      buildAndDownloadCLI: {
+        params:   { outputPath: string; runName: string };
+        response: { savedPath: string; error: string | null };
+      };
       exportCLI: {
         params:   { outputPath: string; runName: string; destDir: string };
         response: { bundlePath: string; error: string | null };
+      };
+      downloadExport: {
+        params:   { outputPath: string; format: string };
+        response: { savedPath: string; error: string | null };
+      };
+      downloadFile: {
+        params:   { srcPath: string };
+        response: { savedPath: string; error: string | null };
       };
       revealInFilesystem: {
         params:   { path: string };

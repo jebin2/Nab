@@ -13,8 +13,38 @@ Supported formats: onnx, tflite, coreml, openvino
 """
 
 import json
+import logging
+import subprocess
 import sys
-from yolo_utils import suppress_fd1
+
+# Extra packages required per export format (beyond ultralytics).
+FORMAT_DEPS: dict[str, list[str]] = {
+    "onnx":     ["onnx", "onnxruntime", "onnxslim"],
+    "openvino": ["openvino"],
+    "coreml":   ["coremltools"],
+    "tflite":   ["tensorflow"],
+}
+
+
+def ensure_deps(fmt: str):
+    deps = FORMAT_DEPS.get(fmt, [])
+    if not deps:
+        return
+    subprocess.run(
+        [sys.executable, "-m", "pip", "install", "--quiet", *deps],
+        check=True,
+    )
+
+
+def silence_ultralytics():
+    """Replace all Ultralytics logger handlers with NullHandler so their
+    StreamHandlers never touch a closed or redirected stream."""
+    try:
+        import ultralytics.utils as _uu
+        _uu.LOGGER.handlers = [logging.NullHandler()]
+        _uu.LOGGER.propagate = False
+    except Exception:
+        pass
 
 
 def main():
@@ -28,16 +58,21 @@ def main():
     fmt        = config["format"]
 
     try:
-        with suppress_fd1():
-            from ultralytics import YOLO
-            model = YOLO(model_path)
+        ensure_deps(fmt)
+    except Exception as e:
+        print(json.dumps({"exportedPath": "", "error": f"Failed to install dependencies: {e}"}), flush=True)
+        sys.exit(1)
+
+    try:
+        from ultralytics import YOLO
+        silence_ultralytics()
+        model = YOLO(model_path)
     except Exception as e:
         print(json.dumps({"exportedPath": "", "error": f"Failed to load model: {e}"}), flush=True)
         sys.exit(1)
 
     try:
-        with suppress_fd1():
-            exported_path = model.export(format=fmt)
+        exported_path = model.export(format=fmt)
     except Exception as e:
         print(json.dumps({"exportedPath": "", "error": f"Export failed: {e}"}), flush=True)
         sys.exit(1)

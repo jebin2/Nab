@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   Package, GitMerge, Smartphone, Monitor, Cpu,
-  Terminal, FolderOpen, CheckCircle, Loader, AlertCircle,
+  Terminal, CheckCircle, AlertCircle, Download, X, Loader,
 } from "lucide-react";
 import { type TrainingRun } from "../lib/types";
 import { getRPC } from "../lib/rpc";
@@ -11,115 +11,87 @@ import { getRPC } from "../lib/rpc";
 interface FormatDef {
   id:    string;
   label: string;
-  ext:   string;
   desc:  string;
   Icon:  React.ElementType;
 }
 
 const FORMATS: FormatDef[] = [
-  { id: "pt",       label: "PyTorch (.pt)",       ext: ".pt",        desc: "Full precision floating point weights. Best for fine-tuning and retraining.", Icon: Package   },
-  { id: "onnx",     label: "ONNX (.onnx)",         ext: ".onnx",      desc: "Universal interoperability format. Highly optimized for CPU inference.",       Icon: GitMerge  },
-  { id: "tflite",   label: "TFLite (.tflite)",     ext: ".tflite",    desc: "Mobile deployment. Quantized to INT8 for edge devices.",                       Icon: Smartphone },
-  { id: "coreml",   label: "CoreML (.mlpackage)",  ext: ".mlpackage", desc: "Optimized for Apple Neural Engine (ANE). macOS/iOS only.",                    Icon: Monitor   },
-  { id: "openvino", label: "OpenVINO",             ext: "/",          desc: "Intel hardware acceleration. Optimized for Intel CPUs and GPUs.",              Icon: Cpu       },
+  { id: "pt",       label: "PyTorch (.pt)",      desc: "Full precision floating point weights. Best for fine-tuning and retraining.", Icon: Package    },
+  { id: "onnx",     label: "ONNX (.onnx)",        desc: "Universal interoperability format. Highly optimized for CPU inference.",       Icon: GitMerge   },
+  { id: "tflite",   label: "TFLite (.tflite)",    desc: "Mobile deployment. Quantized to INT8 for edge devices.",                       Icon: Smartphone },
+  { id: "coreml",   label: "CoreML (.mlpackage)", desc: "Optimized for Apple Neural Engine (ANE). macOS/iOS only.",                    Icon: Monitor    },
+  { id: "openvino", label: "OpenVINO",            desc: "Intel hardware acceleration. Optimized for Intel CPUs and GPUs.",              Icon: Cpu        },
 ];
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
-type ExportState = "idle" | "exporting" | "done" | "error";
+type DownloadOp =
+  | { id: string; label: string; kind: "format"; outputPath: string; format: string }
+  | { id: "cli";  label: string; kind: "cli";    outputPath: string; runName: string };
 
-interface FormatResult {
-  state:       ExportState;
-  exportedPath: string;
-  fileSize:    number;
-  error:       string;
+interface DownloadModal {
+  open:      boolean;
+  formatId:  string;
+  label:     string;
+  status:    "loading" | "done" | "error";
+  savedPath: string;
+  error:     string;
 }
 
 interface Props {
   runs: TrainingRun[];
 }
 
-// ── helpers ───────────────────────────────────────────────────────────────────
-
-function fmtBytes(bytes: number): string {
-  if (bytes === 0) return "—";
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
+const MODAL_CLOSED: DownloadModal = {
+  open: false, formatId: "", label: "", status: "loading", savedPath: "", error: "",
+};
 
 // ── component ─────────────────────────────────────────────────────────────────
 
 export default function Export({ runs }: Props) {
   const doneRuns = runs.filter(r => r.status === "done");
 
-  const [selectedRunId,  setSelectedRunId]  = useState<string | null>(doneRuns[0]?.id ?? null);
-  const [formatResults,  setFormatResults]  = useState<Record<string, FormatResult>>({});
-  const [cliBundleDir,   setCliBundleDir]   = useState("");
-  const [cliState,       setCliState]       = useState<ExportState>("idle");
-  const [cliBundlePath,  setCliBundlePath]  = useState("");
-  const [cliError,       setCliError]       = useState("");
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(doneRuns[0]?.id ?? null);
+  const [dlModal,       setDlModal]       = useState<DownloadModal>(MODAL_CLOSED);
 
-  // Auto-select first done run.
   useEffect(() => {
     if (!selectedRunId && doneRuns.length > 0) setSelectedRunId(doneRuns[0].id);
   }, [runs]);
 
   const selectedRun = doneRuns.find(r => r.id === selectedRunId) ?? null;
 
-  function handleSelectRun(id: string) {
-    setSelectedRunId(id);
-    setFormatResults({});
-    setCliState("idle");
-    setCliBundlePath("");
-    setCliError("");
+  function closeDlModal() {
+    setDlModal(MODAL_CLOSED);
   }
 
-  async function handleExportFormat(format: FormatDef) {
-    if (!selectedRun) return;
-    setFormatResults(prev => ({
-      ...prev,
-      [format.id]: { state: "exporting", exportedPath: "", fileSize: 0, error: "" },
-    }));
+  async function handleDownload(op: DownloadOp) {
+    setDlModal({ open: true, formatId: op.id, label: op.label, status: "loading", savedPath: "", error: "" });
     try {
-      const res = await getRPC().request.exportModel({ outputPath: selectedRun.outputPath, format: format.id });
+      const res = op.kind === "cli"
+        ? await getRPC().request.buildAndDownloadCLI({ outputPath: op.outputPath, runName: op.runName })
+        : await getRPC().request.downloadExport({ outputPath: op.outputPath, format: op.format });
       if (res.error) {
-        setFormatResults(prev => ({ ...prev, [format.id]: { state: "error", exportedPath: "", fileSize: 0, error: res.error! } }));
+        setDlModal(prev => ({ ...prev, status: "error", error: res.error! }));
       } else {
-        setFormatResults(prev => ({ ...prev, [format.id]: { state: "done", exportedPath: res.exportedPath, fileSize: res.fileSize, error: "" } }));
+        setDlModal(prev => ({ ...prev, status: "done", savedPath: res.savedPath }));
       }
     } catch (e) {
-      setFormatResults(prev => ({ ...prev, [format.id]: { state: "error", exportedPath: "", fileSize: 0, error: String(e) } }));
-    }
-  }
-
-  async function handleReveal(path: string) {
-    await getRPC().request.revealInFilesystem({ path });
-  }
-
-  async function handlePickCLIDir() {
-    const res = await getRPC().request.openFolderPathDialog({});
-    if (!res.canceled) setCliBundleDir(res.path);
-  }
-
-  async function handleExportCLI() {
-    if (!selectedRun || !cliBundleDir) return;
-    setCliState("exporting");
-    setCliError("");
-    try {
-      const res = await getRPC().request.exportCLI({
-        outputPath: selectedRun.outputPath,
-        runName:    selectedRun.name,
-        destDir:    cliBundleDir,
-      });
-      if (res.error) { setCliState("error"); setCliError(res.error); }
-      else           { setCliState("done");  setCliBundlePath(res.bundlePath); }
-    } catch (e) {
-      setCliState("error"); setCliError(String(e));
+      setDlModal(prev => ({ ...prev, status: "error", error: String(e) }));
     }
   }
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", background: "var(--bg)", overflow: "hidden" }}>
+
+      {dlModal.open && (
+        <DownloadModalOverlay
+          label={dlModal.label}
+          status={dlModal.status}
+          savedPath={dlModal.savedPath}
+          error={dlModal.error}
+          onClose={closeDlModal}
+        />
+      )}
 
       {/* ── Header ── */}
       <div style={{ height: 56, padding: "0 28px", display: "flex", alignItems: "center", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
@@ -155,7 +127,7 @@ export default function Export({ runs }: Props) {
             ) : (
               <select
                 value={selectedRunId ?? ""}
-                onChange={e => handleSelectRun(e.target.value)}
+                onChange={e => setSelectedRunId(e.target.value)}
                 style={{
                   width: "100%", padding: "10px 14px", borderRadius: 8,
                   border: "1px solid var(--border)", background: "var(--surface)",
@@ -175,23 +147,15 @@ export default function Export({ runs }: Props) {
           {/* ── Section 1: Format Export ── */}
           <SectionHeading label="Model Format Export" />
           <div style={{ marginBottom: 40, display: "flex", flexDirection: "column", gap: 0 }}>
-            {FORMATS.map((fmt, i) => {
-              const result = formatResults[fmt.id];
-              const state  = result?.state ?? "idle";
-              const isLast = i === FORMATS.length - 1;
-              return (
-                <FormatRow
-                  key={fmt.id}
-                  fmt={fmt}
-                  state={state}
-                  result={result}
-                  disabled={!selectedRun}
-                  isLast={isLast}
-                  onExport={() => handleExportFormat(fmt)}
-                  onReveal={() => result?.exportedPath && handleReveal(result.exportedPath)}
-                />
-              );
-            })}
+            {FORMATS.map((fmt, i) => (
+              <FormatRow
+                key={fmt.id}
+                fmt={fmt}
+                disabled={!selectedRun || (dlModal.open && dlModal.formatId === fmt.id)}
+                isLast={i === FORMATS.length - 1}
+                onDownload={() => handleDownload({ id: fmt.id, label: fmt.label, kind: "format", outputPath: selectedRun!.outputPath, format: fmt.id })}
+              />
+            ))}
           </div>
 
           {/* ── Section 2: CLI Bundle ── */}
@@ -217,7 +181,6 @@ export default function Export({ runs }: Props) {
                   On first run it auto-creates a venv and installs ultralytics; subsequent runs are instant.
                 </p>
 
-                {/* What's included */}
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 20 }}>
                   {["Bun runtime", "model.pt", "cli.py", "auto-venv"].map(item => (
                     <span key={item} style={{
@@ -228,7 +191,6 @@ export default function Export({ runs }: Props) {
                   ))}
                 </div>
 
-                {/* Usage preview */}
                 <div style={{
                   background: "#0A0A0A", borderRadius: 8, padding: "12px 16px",
                   fontFamily: "monospace", fontSize: 12, color: "#A3E635",
@@ -241,70 +203,10 @@ export default function Export({ runs }: Props) {
                   <span>{selectedRun ? `${selectedRun.name.replace(/[^a-zA-Z0-9_-]/g, "_")}-detect` : "detect"} photo.jpg --conf 0.7 --output_path out.json</span>
                 </div>
 
-                {/* Output folder picker */}
-                <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 16 }}>
-                  <div
-                    onClick={handlePickCLIDir}
-                    style={{
-                      flex: 1, padding: "8px 12px", borderRadius: 6,
-                      border: "1px solid var(--border)", background: "var(--bg)",
-                      fontSize: 12, fontFamily: "monospace", color: cliBundleDir ? "var(--text)" : "var(--text-muted)",
-                      cursor: "pointer", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                    }}
-                  >
-                    {cliBundleDir || "Choose output folder…"}
-                  </div>
-                  <button
-                    onClick={handlePickCLIDir}
-                    style={{
-                      display: "flex", alignItems: "center", gap: 6,
-                      padding: "8px 12px", borderRadius: 6,
-                      border: "1px solid var(--border)", background: "var(--bg)",
-                      color: "var(--text-muted)", fontSize: 12, cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
-                    }}
-                  >
-                    <FolderOpen size={14} /> Browse
-                  </button>
-                </div>
-
-                {/* Action row */}
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <button
-                    onClick={handleExportCLI}
-                    disabled={!selectedRun || !cliBundleDir || cliState === "exporting"}
-                    style={{
-                      display: "flex", alignItems: "center", gap: 7,
-                      padding: "8px 20px", borderRadius: 7, border: "none",
-                      background: (!selectedRun || !cliBundleDir || cliState === "exporting") ? "var(--border)" : "var(--accent)",
-                      color: (!selectedRun || !cliBundleDir || cliState === "exporting") ? "var(--text-muted)" : "#fff",
-                      fontSize: 13, fontWeight: 600, cursor: (!selectedRun || !cliBundleDir || cliState === "exporting") ? "not-allowed" : "pointer",
-                      fontFamily: "inherit",
-                    }}
-                  >
-                    {cliState === "exporting"
-                      ? <><Loader size={14} /> Compiling…</>
-                      : <><Terminal size={14} /> Build CLI Executable</>
-                    }
-                  </button>
-
-                  {cliState === "done" && (
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <CheckCircle size={16} color="#22C55E" />
-                      <button
-                        onClick={() => handleReveal(cliBundlePath)}
-                        style={{ fontSize: 12, color: "var(--accent)", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", textDecoration: "underline", padding: 0 }}
-                      >
-                        Open Folder
-                      </button>
-                    </div>
-                  )}
-                  {cliState === "error" && (
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <AlertCircle size={14} color="#EF4444" />
-                      <span style={{ fontSize: 12, color: "#EF4444" }}>{cliError}</span>
-                    </div>
-                  )}
-                </div>
+                <DownloadButton
+                  disabled={!selectedRun || (dlModal.open && dlModal.formatId === "cli")}
+                  onClick={() => handleDownload({ id: "cli", label: "CLI Executable", kind: "cli", outputPath: selectedRun!.outputPath, runName: selectedRun!.name })}
+                />
               </div>
             </div>
           </div>
@@ -317,14 +219,11 @@ export default function Export({ runs }: Props) {
               borderRadius: 10, overflow: "hidden",
             }}>
               {[
-                { label: "Source Model",  value: selectedRun.name },
-                { label: "Base",          value: selectedRun.baseModel },
-                { label: "mAP @ .5",      value: selectedRun.mAP != null ? selectedRun.mAP.toFixed(3) : "—" },
+                { label: "Source Model", value: selectedRun.name },
+                { label: "Base",         value: selectedRun.baseModel },
+                { label: "mAP @ .5",     value: selectedRun.mAP != null ? selectedRun.mAP.toFixed(3) : "—" },
               ].map(({ label, value }, i) => (
-                <div key={label} style={{
-                  padding: "16px 20px",
-                  borderRight: i < 2 ? "1px solid var(--border)" : "none",
-                }}>
+                <div key={label} style={{ padding: "16px 20px", borderRight: i < 2 ? "1px solid var(--border)" : "none" }}>
                   <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-muted)", marginBottom: 6 }}>
                     {label}
                   </div>
@@ -354,14 +253,31 @@ function SectionHeading({ label }: { label: string }) {
   );
 }
 
-function FormatRow({ fmt, state, result, disabled, isLast, onExport, onReveal }: {
-  fmt:      FormatDef;
-  state:    ExportState;
-  result?:  FormatResult;
-  disabled: boolean;
-  isLast:   boolean;
-  onExport: () => void;
-  onReveal: () => void;
+function DownloadButton({ disabled, onClick }: { disabled: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      title="Download"
+      style={{
+        display: "flex", alignItems: "center", justifyContent: "center",
+        width: 32, height: 32, borderRadius: 6,
+        border: "1px solid var(--border)",
+        background: disabled ? "var(--border)" : "var(--bg)",
+        color: disabled ? "var(--text-muted)" : "var(--accent)",
+        cursor: disabled ? "not-allowed" : "pointer",
+      }}
+    >
+      <Download size={15} />
+    </button>
+  );
+}
+
+function FormatRow({ fmt, disabled, isLast, onDownload }: {
+  fmt:        FormatDef;
+  disabled:   boolean;
+  isLast:     boolean;
+  onDownload: () => void;
 }) {
   const { Icon } = fmt;
 
@@ -376,75 +292,99 @@ function FormatRow({ fmt, state, result, disabled, isLast, onExport, onReveal }:
       borderBottom: isLast ? "1px solid var(--border)" : "none",
       borderRadius: isLast ? "0 0 10px 10px" : "0",
     }}>
-      {/* Icon */}
       <div style={{
         width: 44, height: 44, borderRadius: 8, flexShrink: 0,
-        background: state === "done" ? "#22C55E18" : "var(--bg)",
-        border: `1px solid ${state === "done" ? "#22C55E33" : "var(--border)"}`,
+        background: "var(--bg)", border: "1px solid var(--border)",
         display: "flex", alignItems: "center", justifyContent: "center",
       }}>
-        <Icon size={20} color={state === "done" ? "#22C55E" : "var(--accent)"} />
+        <Icon size={20} color="var(--accent)" />
       </div>
 
-      {/* Info */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 3 }}>
           {fmt.label}
         </div>
-        <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: result?.exportedPath ? 6 : 0 }}>
+        <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
           {fmt.desc}
         </div>
-        {result?.exportedPath && (
-          <div style={{
-            display: "inline-flex", alignItems: "center", gap: 6,
-            padding: "2px 8px", borderRadius: 4,
-            background: "var(--bg)", border: "1px solid var(--border)",
-            fontSize: 10, fontFamily: "monospace", color: "var(--text-muted)",
-          }}>
-            {fmtBytes(result.fileSize)}
-          </div>
-        )}
-        {state === "error" && result?.error && (
-          <div style={{ fontSize: 11, color: "#EF4444", marginTop: 4 }}>{result.error}</div>
-        )}
       </div>
 
-      {/* Action */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-        {state === "done" ? (
-          <>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <CheckCircle size={15} color="#22C55E" />
-              <span style={{ fontSize: 12, color: "#22C55E", fontWeight: 600 }}>Ready</span>
-            </div>
-            <button
-              onClick={onReveal}
-              style={{ fontSize: 12, color: "var(--accent)", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", textDecoration: "underline", padding: 0 }}
-            >
-              Open Folder
-            </button>
-          </>
-        ) : state === "exporting" ? (
-          <div style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--text-muted)", fontSize: 12 }}>
-            <Loader size={14} />
-            <span>Exporting…</span>
-          </div>
-        ) : (
+      <div style={{ flexShrink: 0 }}>
+        <DownloadButton disabled={disabled} onClick={onDownload} />
+      </div>
+    </div>
+  );
+}
+
+function DownloadModalOverlay({ label, status, savedPath, error, onClose }: {
+  label:     string;
+  status:    "loading" | "done" | "error";
+  savedPath: string;
+  error:     string;
+  onClose:   () => void;
+}) {
+  const filename = savedPath ? savedPath.split("/").pop() : "";
+  const folder   = savedPath ? savedPath.split("/").slice(0, -1).join("/") : "";
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 1000,
+      background: "rgba(0,0,0,0.55)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+    }}>
+      <div style={{
+        position: "relative",
+        background: "var(--surface)", border: "1px solid var(--border)",
+        borderRadius: 14, padding: "40px 44px 36px",
+        minWidth: 300, maxWidth: 420, textAlign: "center",
+        display: "flex", flexDirection: "column", alignItems: "center", gap: 14,
+      }}>
+
+        {status !== "loading" && (
           <button
-            onClick={onExport}
-            disabled={disabled}
+            onClick={onClose}
             style={{
-              padding: "6px 18px", borderRadius: 6, border: "none",
-              background: disabled ? "var(--border)" : "var(--accent)",
-              color: disabled ? "var(--text-muted)" : "#fff",
-              fontSize: 12, fontWeight: 600,
-              cursor: disabled ? "not-allowed" : "pointer", fontFamily: "inherit",
+              position: "absolute", top: 12, right: 12,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              width: 28, height: 28, borderRadius: 6,
+              border: "1px solid var(--border)", background: "var(--bg)",
+              color: "var(--text-muted)", cursor: "pointer",
             }}
           >
-            {fmt.id === "pt" ? "Reveal" : "Export"}
+            <X size={14} />
           </button>
         )}
+
+        {status === "loading" && (
+          <>
+            <div style={{ animation: "spin 1s linear infinite", display: "flex" }}>
+              <Loader size={32} color="var(--accent)" />
+            </div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>Downloading…</div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{label}</div>
+          </>
+        )}
+
+        {status === "done" && (
+          <>
+            <CheckCircle size={32} color="#22C55E" />
+            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>Downloaded</div>
+            <div style={{ fontSize: 13, fontFamily: "monospace", fontWeight: 600, color: "var(--text)", wordBreak: "break-all" }}>
+              {filename}
+            </div>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", wordBreak: "break-all" }}>{folder}</div>
+          </>
+        )}
+
+        {status === "error" && (
+          <>
+            <AlertCircle size={32} color="#EF4444" />
+            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>Download failed</div>
+            <div style={{ fontSize: 12, color: "#EF4444", maxWidth: 300, wordBreak: "break-word" }}>{error}</div>
+          </>
+        )}
       </div>
+      <style>{`@keyframes spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }`}</style>
     </div>
   );
 }

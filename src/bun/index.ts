@@ -1,5 +1,5 @@
 import Electrobun, { BrowserWindow, defineElectrobunRPC } from "electrobun/bun";
-import { readdir, mkdir, copyFile, appendFile, unlink, rm, mkdtemp } from "fs/promises";
+import { readdir, mkdir, copyFile, cp, appendFile, unlink, rm, mkdtemp, stat } from "fs/promises";
 import { join, extname, basename } from "path";
 import { randomBytes } from "crypto";
 import { homedir, tmpdir } from "os";
@@ -235,9 +235,7 @@ const rpc = defineElectrobunRPC("bun", {
 				}
 				const { stdout, stderr } = await runProcess([VENV_PYTHON, EXPORT_SCRIPT], {
 					stdinData: JSON.stringify({ modelPath, format }),
-					stderrHandler: async text => {
-						console.error("[export]", text);
-					},
+					stderrHandler: async () => {},
 				});
 				const line = stdout.trim().split("\n").filter(Boolean).pop() ?? "";
 				try {
@@ -251,7 +249,42 @@ const rpc = defineElectrobunRPC("bun", {
 				}
 			},
 
-			exportCLI: async ({ outputPath, runName, destDir }: {
+			buildAndDownloadCLI: async ({ outputPath, runName }: { outputPath: string; runName: string }) => {
+				const modelPath = join(outputPath, "weights", "weights", "best.pt");
+				if (!(await Bun.file(modelPath).exists()))
+					return { savedPath: "", error: "Model weights not found." };
+
+				const safeName    = runName.replace(/[^a-zA-Z0-9_-]/g, "_");
+				const binaryName  = `${safeName}-detect${process.platform === "win32" ? ".exe" : ""}`;
+				const downloadsDir = join(homedir(), "Downloads");
+				await mkdir(downloadsDir, { recursive: true });
+				const outBinary   = join(downloadsDir, binaryName);
+
+				const buildDir = await mkdtemp(join(tmpdir(), "yolostudio-cli-"));
+				try {
+					await copyFile(CLI_ENTRY,         join(buildDir, "cli.ts"));
+					await copyFile(UTIL_ENTRY,        join(buildDir, "util.ts"));
+					await copyFile(modelPath,         join(buildDir, "model.pt"));
+					await copyFile(INFER_SCRIPT,      join(buildDir, "infer.py"));
+					await copyFile(YOLO_UTILS_SCRIPT, join(buildDir, "yolo_utils.py"));
+
+					const proc = Bun.spawn(
+						[process.execPath, "build", "--compile", join(buildDir, "cli.ts"), "--outfile", outBinary],
+						{ stdout: "pipe", stderr: "pipe" },
+					);
+					let stderr = "";
+					for await (const chunk of proc.stderr) stderr += new TextDecoder().decode(chunk);
+					const exitCode = await proc.exited;
+					if (exitCode !== 0)
+						return { savedPath: "", error: `Compile failed: ${stderr.trim().split("\n").pop()}` };
+				} finally {
+					await rm(buildDir, { recursive: true, force: true }).catch(() => {});
+				}
+
+				return { savedPath: outBinary, error: null };
+			},
+
+		exportCLI: async ({ outputPath, runName, destDir }: {
 				outputPath: string; runName: string; destDir: string;
 			}) => {
 				const modelPath = join(outputPath, "weights", "weights", "best.pt");
@@ -284,6 +317,56 @@ const rpc = defineElectrobunRPC("bun", {
 				}
 
 				return { bundlePath: outBinary, error: null };
+			},
+
+			downloadExport: async ({ outputPath, format }: { outputPath: string; format: string }) => {
+				const modelPath = join(outputPath, "weights", "weights", "best.pt");
+				if (!(await Bun.file(modelPath).exists()))
+					return { savedPath: "", error: "Model weights not found." };
+
+				let exportedPath: string;
+
+				if (format === "pt") {
+					exportedPath = modelPath;
+				} else {
+					const { stdout, stderr } = await runProcess([VENV_PYTHON, EXPORT_SCRIPT], {
+						stdinData: JSON.stringify({ modelPath, format }),
+						stderrHandler: async () => {},
+					});
+					const line = stdout.trim().split("\n").filter(Boolean).pop() ?? "";
+					try {
+						const data = JSON.parse(line);
+						if (data.error) return { savedPath: "", error: data.error };
+						exportedPath = data.exportedPath;
+					} catch {
+						const hint = stderr.trim().split("\n").filter(Boolean).pop() ?? "";
+						return { savedPath: "", error: `Export failed.${hint ? ` ${hint}` : ""}` };
+					}
+				}
+
+				const downloadsDir = join(homedir(), "Downloads");
+				await mkdir(downloadsDir, { recursive: true });
+				const destPath = join(downloadsDir, basename(exportedPath));
+				const srcStat  = await stat(exportedPath);
+				if (srcStat.isDirectory()) {
+					await cp(exportedPath, destPath, { recursive: true });
+				} else {
+					await copyFile(exportedPath, destPath);
+				}
+				return { savedPath: destPath, error: null };
+			},
+
+		downloadFile: async ({ srcPath }: { srcPath: string }) => {
+				const downloadsDir = join(homedir(), "Downloads");
+				await mkdir(downloadsDir, { recursive: true });
+				const destPath = join(downloadsDir, basename(srcPath));
+				const srcStat  = await stat(srcPath);
+				if (srcStat.isDirectory()) {
+					await cp(srcPath, destPath, { recursive: true });
+				} else {
+					await copyFile(srcPath, destPath);
+				}
+				return { savedPath: destPath, error: null };
 			},
 
 			revealInFilesystem: async ({ path }: { path: string }) => {
