@@ -514,3 +514,20 @@ const mainWindow = new BrowserWindow({
 });
 
 console.log(`YOLOStudio started — bridge on port ${server.port}`);
+
+// ── Graceful shutdown ─────────────────────────────────────────────────────────
+// Kill every child process we spawned before the app exits.
+
+function killAll() {
+	for (const [, proc] of runningProcesses) {
+		try { proc.kill(9); } catch {}
+	}
+	runningProcesses.clear();
+}
+
+Electrobun.events.on("before-quit", () => killAll());
+
+// Fallback for SIGTERM / SIGINT (e.g. `kill` from terminal or Ctrl-C in dev).
+process.on("SIGTERM", () => { killAll(); process.exit(0); });
+process.on("SIGINT",  () => { killAll(); process.exit(0); });
+process.on("exit",    () => killAll());
