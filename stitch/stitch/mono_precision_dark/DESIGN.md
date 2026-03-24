@@ -1,4 +1,4 @@
-# Design System Strategy: YOLOStudio
+# Design System Strategy: Reticle
 
 ## 1. Overview & Creative North Star
 **Creative North Star: The Kinetic Laboratory**

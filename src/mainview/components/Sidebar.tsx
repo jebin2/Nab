@@ -42,7 +42,7 @@ export default function Sidebar({ activePage, onNavigate }: Props) {
             </svg>
           </div>
           <span style={{ fontWeight: 700, fontSize: 15, letterSpacing: "-0.3px", color: "var(--text)" }}>
-            YOLOStudio
+            Reticle
           </span>
         </div>
       </div>

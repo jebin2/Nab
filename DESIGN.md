@@ -1,4 +1,4 @@
-# YOLOStudio — High Level Design
+# Reticle — High Level Design
 
 > **Tagline:** Just annotate and train. A standalone desktop app to train YOLO models with custom datasets — no code, no terminal, no Python knowledge required.
 
@@ -106,7 +106,7 @@
 ## Data / File Structure (per project)
 
 ```
-~/YOLOStudio/projects/<project-name>/
+~/Reticle/projects/<project-name>/
 ├── project.json            ← metadata (classes, base model, config)
 ├── images/
 │   ├── train/

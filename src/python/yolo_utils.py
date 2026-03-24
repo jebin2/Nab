@@ -1,5 +1,5 @@
 """
-Shared utilities for YOLOStudio Python scripts.
+Shared utilities for Reticle Python scripts.
 """
 
 import os

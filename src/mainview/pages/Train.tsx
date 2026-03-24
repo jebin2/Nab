@@ -246,7 +246,7 @@ export default function Train({ assets, runs, onRunsChange }: Props) {
       {deleteTarget && (
         <DeleteConfirmModal
           title="Delete Training Run"
-          description={`"${deleteTarget.name}" will be removed from YOLOStudio. This cannot be undone.`}
+          description={`"${deleteTarget.name}" will be removed from Reticle. This cannot be undone.`}
           folderPath={deleteTarget.outputPath}
           folderLabel={deleteTarget.outputPath}
           onConfirm={() => { onRunsChange(runs.filter(r => r.id !== deleteTarget.id)); setDeleteTarget(null); }}
@@ -1066,7 +1066,7 @@ function NewRunModal({ assets, runs, onClose, onCreate }: {
           ? `${first.name.toLowerCase().replace(/\s+/g, "-")}-${baseModel}-v1`
           : "";
         setName(suggested);
-        if (!outputEdited) setOutputPath(suggested ? `~/.yolostudio/runs/${suggested}` : "");
+        if (!outputEdited) setOutputPath(suggested ? `~/.reticle/runs/${suggested}` : "");
       }
       return next;
     });
@@ -1075,7 +1075,7 @@ function NewRunModal({ assets, runs, onClose, onCreate }: {
   function handleNameChange(val: string) {
     setName(val);
     setNameEdited(true);
-    if (!outputEdited) setOutputPath(val.trim() ? `~/.yolostudio/runs/${val.trim()}` : "");
+    if (!outputEdited) setOutputPath(val.trim() ? `~/.reticle/runs/${val.trim()}` : "");
   }
 
   async function pickFolder() {
@@ -1224,7 +1224,7 @@ function NewRunModal({ assets, runs, onClose, onCreate }: {
                 <input
                   value={outputPath}
                   onChange={e => { setOutputPath(e.target.value); setOutputEdited(true); }}
-                  placeholder="~/.yolostudio/runs/my-run"
+                  placeholder="~/.reticle/runs/my-run"
                   style={{ ...inputStyle, flex: 1, fontFamily: "monospace", fontSize: 11 }}
                 />
                 <button

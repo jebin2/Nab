@@ -2,8 +2,8 @@ import type { ElectrobunConfig } from "electrobun";
 
 export default {
 	app: {
-		name: "YOLOStudio",
-		identifier: "yolostudio.app",
+		name: "Reticle",
+		identifier: "reticle.app",
 		version: "0.1.0",
 	},
 	build: {
@@ -16,15 +16,15 @@ export default {
 			},
 		},
 		copy: {
-			"src/mainview/index.html":              "views/mainview/index.html",
-			"src/mainview/index.css":               "views/mainview/index.css",
-			"src/python/train.py":                  "python/train.py",
-			"src/python/infer.py":                  "python/infer.py",
-			"src/python/export.py":                 "python/export.py",
-			"src/python/yolo_utils.py":             "python/yolo_utils.py",
-			"src/python/cli.py":                    "python/cli.py",
-			"src/bun/cli.ts":                       "bun/cli.ts",
-			"src/bun/util.ts":                      "bun/util.ts",
+			"src/mainview/index.html": "views/mainview/index.html",
+			"src/mainview/index.css": "views/mainview/index.css",
+			"src/python/train.py": "python/train.py",
+			"src/python/infer.py": "python/infer.py",
+			"src/python/export.py": "python/export.py",
+			"src/python/yolo_utils.py": "python/yolo_utils.py",
+			"src/python/cli.py": "python/cli.py",
+			"src/bun/cli.ts": "bun/cli.ts",
+			"src/bun/util.ts": "bun/util.ts",
 		},
 	},
 	runtime: {

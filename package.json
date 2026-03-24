@@ -1,5 +1,5 @@
 {
-	"name": "yolostudio",
+	"name": "reticle",
 	"version": "0.1.0",
 	"description": "Just annotate and train — a standalone desktop app for custom YOLO model training",
 	"scripts": {

@@ -1,8 +1,8 @@
 !include "MUI2.nsh"
 
-Name "YOLOStudio"
-OutFile "YOLOStudio-Windows.exe"
-InstallDir "$LOCALAPPDATA\YOLOStudio"
+Name "Reticle"
+OutFile "Reticle-Windows.exe"
+InstallDir "$LOCALAPPDATA\Reticle"
 RequestExecutionLevel user
 ShowInstDetails show
 
@@ -14,10 +14,10 @@ Section "Install"
   File /r "setup_extracted\*"
 
   ; Run electrobun setup
-  nsExec::ExecToLog '"$INSTDIR\YOLOStudio-Setup.exe"'
+  nsExec::ExecToLog '"$INSTDIR\Reticle-Setup.exe"'
 
-  CreateShortcut "$DESKTOP\YOLOStudio.lnk" \
-    "$LOCALAPPDATA\yolostudio.app\stable\app\bin\launcher.exe"
-  CreateShortcut "$SMPROGRAMS\YOLOStudio.lnk" \
-    "$LOCALAPPDATA\yolostudio.app\stable\app\bin\launcher.exe"
+  CreateShortcut "$DESKTOP\Reticle.lnk" \
+    "$LOCALAPPDATA\reticle.app\stable\app\bin\launcher.exe"
+  CreateShortcut "$SMPROGRAMS\Reticle.lnk" \
+    "$LOCALAPPDATA\reticle.app\stable\app\bin\launcher.exe"
 SectionEnd

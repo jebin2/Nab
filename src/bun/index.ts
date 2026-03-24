@@ -378,7 +378,7 @@ const rpc = defineElectrobunRPC("bun", {
 				const binaryName = `${safeName}-cli${process.platform === "win32" ? ".exe" : ""}`;
 				const outBinary  = join(tmpdir(), binaryName);
 
-				const buildDir = await mkdtemp(join(tmpdir(), "yolostudio-cli-"));
+				const buildDir = await mkdtemp(join(tmpdir(), "reticle-cli-"));
 				try {
 					await copyFile(CLI_ENTRY,         join(buildDir, "cli.ts"));
 					await copyFile(UTIL_ENTRY,        join(buildDir, "util.ts"));
@@ -415,7 +415,7 @@ const rpc = defineElectrobunRPC("bun", {
 				const outBinary = join(destDir, `${safeName}-detect${process.platform === "win32" ? ".exe" : ""}`);
 
 				// Temp dir: cli.ts + util.ts (its import) + embedded Python assets.
-				const buildDir = await mkdtemp(join(tmpdir(), "yolostudio-cli-"));
+				const buildDir = await mkdtemp(join(tmpdir(), "reticle-cli-"));
 				try {
 					await copyFile(CLI_ENTRY,    join(buildDir, "cli.ts"));
 					await copyFile(UTIL_ENTRY,   join(buildDir, "util.ts"));
@@ -539,13 +539,13 @@ const rpc = defineElectrobunRPC("bun", {
 // ── Window ────────────────────────────────────────────────────────────────────
 
 const mainWindow = new BrowserWindow({
-	title: "YOLOStudio",
+	title: "Reticle",
 	url:   "views://mainview/index.html",
 	frame: { width: 1280, height: 800, x: 100, y: 80 },
 	rpc,
 });
 
-console.log(`YOLOStudio started — bridge on port ${server.port}`);
+console.log(`Reticle started — bridge on port ${server.port}`);
 
 // ── Graceful shutdown ─────────────────────────────────────────────────────────
 // Kill every child process we spawned before the app exits.

@@ -1,5 +1,5 @@
 """
-YOLOStudio training script — YOLO26 via Ultralytics.
+Reticle training script — YOLO26 via Ultralytics.
 
 Called by the Bun process with a JSON config on stdin:
 {
@@ -75,7 +75,7 @@ def retry_on_cpu(config: dict):
 
     env = dict(os.environ)
     env["CUDA_VISIBLE_DEVICES"] = "-1"
-    env["YOLOSTUDIO_CPU_FALLBACK"] = "1"
+    env["RETICLE_CPU_FALLBACK"] = "1"
 
     proc = subprocess.Popen(
         [sys.executable, __file__],
@@ -247,7 +247,7 @@ def main():
     except Exception as e:
         if (
             device == "auto" and
-            os.environ.get("YOLOSTUDIO_CPU_FALLBACK") != "1" and
+            os.environ.get("RETICLE_CPU_FALLBACK") != "1" and
             is_cuda_unavailable_error(e)
         ):
             emit({"type": "stderr", "text": "[train] CUDA unavailable for auto device; retrying on CPU…"})

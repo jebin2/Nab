@@ -94,7 +94,7 @@ export default function Assets({ assets, onAssetsChange, onOpenAsset }: Props) {
       {deleteTarget && (
         <DeleteConfirmModal
           title="Delete Asset"
-          description={`"${deleteTarget.name}" will be removed from YOLOStudio. This cannot be undone.`}
+          description={`"${deleteTarget.name}" will be removed from Reticle. This cannot be undone.`}
           folderPath={deleteTarget.storagePath}
           folderLabel={deleteTarget.storagePath}
           onConfirm={() => { onAssetsChange(assets.filter(a => a.id !== deleteTarget.id)); setDeleteTarget(null); }}
@@ -246,7 +246,7 @@ function NewAssetModal({ assets, onClose, onCreate }: {
     setName(val);
     if (!pathEdited) {
       const slug = val.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
-      setStoragePath(slug ? `~/.yolostudio/assets/${slug}` : "");
+      setStoragePath(slug ? `~/.reticle/assets/${slug}` : "");
     }
   }
 
@@ -312,7 +312,7 @@ function NewAssetModal({ assets, onClose, onCreate }: {
               <input
                 value={storagePath}
                 onChange={e => { setStoragePath(e.target.value); setPathEdited(true); }}
-                placeholder="~/.yolostudio/assets/my-asset"
+                placeholder="~/.reticle/assets/my-asset"
                 style={{ ...inputStyle, flex: 1, fontFamily: "monospace", fontSize: 11 }}
               />
               <button
