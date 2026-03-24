@@ -20,6 +20,7 @@ Each detection:
 
 import json
 import sys
+from pathlib import Path
 from yolo_utils import suppress_fd1
 
 
@@ -30,9 +31,13 @@ def main():
         print(json.dumps({"error": f"Invalid config JSON: {e}"}), flush=True)
         sys.exit(1)
 
-    image_path  = config["imagePath"]
+    image_path  = Path(config["imagePath"])
     model_path  = config["modelPath"]
     confidence  = float(config.get("confidence", 0.5))
+
+    if not image_path.exists():
+        print(json.dumps({"error": f"Image not found: {image_path}"}), flush=True)
+        sys.exit(1)
 
     try:
         with suppress_fd1():

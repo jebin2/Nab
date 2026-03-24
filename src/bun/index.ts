@@ -12,6 +12,31 @@ import {
 
 const IMAGE_EXTS = new Set([".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".tiff", ".tif"]);
 
+/** Expand a leading ~ to the real home directory. */
+const exp = (p: string) => p.replace(/^~/, homedir());
+
+/**
+ * Electrobun's openFileDialog splits its result on "," to support multi-select,
+ * which breaks filenames that contain commas.  Reassemble by greedily joining
+ * adjacent parts until we find a path that exists on disk.
+ */
+async function pathExists(p: string): Promise<boolean> {
+  try { await stat(p); return true; } catch { return false; }
+}
+
+async function fixCommaSplitPaths(parts: string[]): Promise<string[]> {
+  const result: string[] = [];
+  let candidate = "";
+  for (const part of parts) {
+    candidate = candidate ? `${candidate},${part}` : part;
+    if (await pathExists(candidate)) {
+      result.push(candidate);
+      candidate = "";
+    }
+  }
+  return result.length > 0 ? result : parts;
+}
+
 // Paths to CLI source files — copied into the compile temp dir by exportCLI.
 const CLI_ENTRY  = join(import.meta.dir, "cli.ts");
 const UTIL_ENTRY = join(import.meta.dir, "util.ts");
@@ -97,7 +122,9 @@ const rpc = defineElectrobunRPC("bun", {
 					canChooseFiles: true, canChooseDirectory: false, allowsMultipleSelection: true,
 				});
 				const canceled = !filePaths || filePaths.length === 0 || filePaths[0] === "";
-				return { canceled, paths: canceled ? [] : filePaths };
+				if (canceled) return { canceled: true, paths: [] };
+				const fixed = await fixCommaSplitPaths(filePaths);
+				return { canceled: false, paths: fixed };
 			},
 
 			loadStudio: async () => {
@@ -131,14 +158,15 @@ const rpc = defineElectrobunRPC("bun", {
 				});
 				const canceled = !filePaths || filePaths.length === 0 || filePaths[0] === "";
 				if (canceled) return { canceled: true, paths: [] };
-				const paths = await collectImagePaths(filePaths[0]);
+				const [folderPath] = await fixCommaSplitPaths(filePaths);
+				const paths = await collectImagePaths(folderPath);
 				paths.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
 				return { canceled: false, paths };
 			},
 
 			loadAssetData: async ({ storagePath }: { storagePath: string }) => {
-				const imagesDir = join(storagePath, "images");
-				const labelsDir = join(storagePath, "labels");
+				const imagesDir = join(exp(storagePath), "images");
+				const labelsDir = join(exp(storagePath), "labels");
 				await mkdir(imagesDir, { recursive: true });
 				await mkdir(labelsDir, { recursive: true });
 				const imageFiles = (await readdir(imagesDir)).filter(f => IMAGE_EXTS.has(extname(f).toLowerCase()));
@@ -155,7 +183,7 @@ const rpc = defineElectrobunRPC("bun", {
 				}
 				let classes: string[] = [];
 				try {
-					const text = await Bun.file(join(storagePath, "classes.txt")).text();
+					const text = await Bun.file(join(exp(storagePath), "classes.txt")).text();
 					classes = text.trim().split("\n").filter(Boolean);
 				} catch {}
 				return { images: imageFiles.map(f => ({ filename: f, filePath: join(imagesDir, f) })), labels, classes };
@@ -166,7 +194,7 @@ const rpc = defineElectrobunRPC("bun", {
 				labels: Record<string, Array<{ classIndex: number; cx: number; cy: number; w: number; h: number }>>;
 				classes: string[];
 			}) => {
-				const labelsDir = join(storagePath, "labels");
+				const labelsDir = join(exp(storagePath), "labels");
 				await mkdir(labelsDir, { recursive: true });
 				for (const [filename, anns] of Object.entries(labels)) {
 					const labelPath = join(labelsDir, filename.replace(/\.[^.]+$/, ".txt"));
@@ -175,7 +203,7 @@ const rpc = defineElectrobunRPC("bun", {
 					).join("\n");
 					await Bun.write(labelPath, content);
 				}
-				await Bun.write(join(storagePath, "classes.txt"), classes.join("\n"));
+				await Bun.write(join(exp(storagePath), "classes.txt"), classes.join("\n"));
 				return {};
 			},
 
@@ -183,7 +211,7 @@ const rpc = defineElectrobunRPC("bun", {
 				storagePath: string;
 				files: Array<{ filename: string; sourcePath?: string; dataUrl?: string }>;
 			}) => {
-				const imagesDir = join(storagePath, "images");
+				const imagesDir = join(exp(storagePath), "images");
 				await mkdir(imagesDir, { recursive: true });
 				const results: Array<{ filename: string; filePath: string }> = [];
 				for (const file of files) {
@@ -204,7 +232,9 @@ const rpc = defineElectrobunRPC("bun", {
 					canChooseDirectory: true, allowsMultipleSelection: false,
 				});
 				const canceled = !filePaths || filePaths.length === 0 || filePaths[0] === "";
-				return canceled ? { canceled: true, path: "" } : { canceled: false, path: filePaths[0] };
+				if (canceled) return { canceled: true, path: "" };
+				const [folderPath] = await fixCommaSplitPaths(filePaths);
+				return { canceled: false, path: folderPath };
 			},
 
 			startTraining: async (config: {
@@ -212,13 +242,13 @@ const rpc = defineElectrobunRPC("bun", {
 				baseModel: string; epochs: number; batchSize: number; imgsz: number;
 				device: string; outputPath: string; fresh: boolean;
 			}) => {
-				await mkdir(config.outputPath, { recursive: true });
+				await mkdir(exp(config.outputPath), { recursive: true });
 				if (config.fresh) {
-					await unlink(checkpointPath(config.outputPath)).catch(() => {});
-					await unlink(join(config.outputPath, "train.log")).catch(() => {});
+					await unlink(checkpointPath(exp(config.outputPath))).catch(() => {});
+					await unlink(join(exp(config.outputPath), "train.log")).catch(() => {});
 				}
-				const logPath  = join(config.outputPath, "train.log");
-				const metaPath = join(config.outputPath, "run-meta.json");
+				const logPath  = join(exp(config.outputPath), "train.log");
+				const metaPath = join(exp(config.outputPath), "run-meta.json");
 
 				// Build or prune the locked image snapshot.
 				let images: SnapEntry[];
@@ -258,7 +288,7 @@ const rpc = defineElectrobunRPC("bun", {
 			},
 
 			readTrainingLog: async ({ outputPath }: { outputPath: string }) => {
-				const logPath = join(outputPath, "train.log");
+				const logPath = join(exp(outputPath), "train.log");
 				try {
 					const content = await Bun.file(logPath).text();
 					return { lines: content.split("\n").filter(l => l.trim()) };
@@ -268,7 +298,7 @@ const rpc = defineElectrobunRPC("bun", {
 			readRunMeta: async ({ outputPath }: { outputPath: string }) => {
 				const EMPTY = { found: false, classMap: [] as string[], imageCount: 0, newCount: 0, modifiedCount: 0 };
 				try {
-					const meta = JSON.parse(await Bun.file(join(outputPath, "run-meta.json")).text());
+					const meta = JSON.parse(await Bun.file(join(exp(outputPath), "run-meta.json")).text());
 					const snap = new Map<string, number>(
 						(meta.images ?? []).map((e: SnapEntry) => [e.img, e.mtime])
 					);
@@ -296,7 +326,7 @@ const rpc = defineElectrobunRPC("bun", {
 			checkWeights: async ({ outputPaths }: { outputPaths: string[] }) => {
 				const results: Record<string, boolean> = {};
 				await Promise.all(outputPaths.map(async p => {
-					results[p] = await Bun.file(join(p, "weights", "weights", "best.pt")).exists();
+					results[p] = await Bun.file(join(exp(p), "weights", "weights", "best.pt")).exists();
 				}));
 				return { results };
 			},
@@ -304,11 +334,11 @@ const rpc = defineElectrobunRPC("bun", {
 			runInference: async ({ imagePath, outputPath, confidence }: {
 				imagePath: string; outputPath: string; confidence: number;
 			}) => {
-				const modelPath = join(outputPath, "weights", "weights", "best.pt");
+				const modelPath = join(exp(outputPath), "weights", "weights", "best.pt");
 				if (!(await Bun.file(modelPath).exists()))
 					return { detections: [], inferenceMs: 0, error: "Model weights not found." };
 				return runInference(
-					imagePath, modelPath, confidence,
+					exp(imagePath), modelPath, confidence,
 					INFER_SCRIPT,
 					join(YOLO_DIR, "infer-setup.log"),
 					"inference",
@@ -316,7 +346,7 @@ const rpc = defineElectrobunRPC("bun", {
 			},
 
 			exportModel: async ({ outputPath, format }: { outputPath: string; format: string }) => {
-				const modelPath = join(outputPath, "weights", "weights", "best.pt");
+				const modelPath = join(exp(outputPath), "weights", "weights", "best.pt");
 				if (!(await Bun.file(modelPath).exists()))
 					return { exportedPath: "", fileSize: 0, error: "Model weights not found." };
 				if (format === "pt") {
@@ -340,7 +370,7 @@ const rpc = defineElectrobunRPC("bun", {
 			},
 
 			buildAndDownloadCLI: async ({ outputPath, runName, runId }: { outputPath: string; runName: string; runId: string }) => {
-				const modelPath = join(outputPath, "weights", "weights", "best.pt");
+				const modelPath = join(exp(outputPath), "weights", "weights", "best.pt");
 				if (!(await Bun.file(modelPath).exists()))
 					return { filePath: "", filename: "", error: "Model weights not found." };
 
@@ -377,7 +407,7 @@ const rpc = defineElectrobunRPC("bun", {
 		exportCLI: async ({ outputPath, runName, destDir }: {
 				outputPath: string; runName: string; destDir: string;
 			}) => {
-				const modelPath = join(outputPath, "weights", "weights", "best.pt");
+				const modelPath = join(exp(outputPath), "weights", "weights", "best.pt");
 				if (!(await Bun.file(modelPath).exists()))
 					return { bundlePath: "", error: "Model weights not found." };
 
@@ -418,7 +448,7 @@ const rpc = defineElectrobunRPC("bun", {
 			},
 
 		downloadExport: async ({ outputPath, format, runName, runId }: { outputPath: string; format: string; runName: string; runId: string }) => {
-				const modelPath = join(outputPath, "weights", "weights", "best.pt");
+				const modelPath = join(exp(outputPath), "weights", "weights", "best.pt");
 				if (!(await Bun.file(modelPath).exists()))
 					return { filePath: "", filename: "", error: "Model weights not found." };
 
@@ -474,12 +504,12 @@ const rpc = defineElectrobunRPC("bun", {
 		downloadFile: async ({ srcPath }: { srcPath: string }) => {
 				const downloadsDir = join(homedir(), "Downloads");
 				await mkdir(downloadsDir, { recursive: true });
-				const destPath = join(downloadsDir, basename(srcPath));
-				const srcStat  = await stat(srcPath);
+				const destPath = join(downloadsDir, basename(exp(srcPath)));
+				const srcStat  = await stat(exp(srcPath));
 				if (srcStat.isDirectory()) {
-					await cp(srcPath, destPath, { recursive: true });
+					await cp(exp(srcPath), destPath, { recursive: true });
 				} else {
-					await copyFile(srcPath, destPath);
+					await copyFile(exp(srcPath), destPath);
 				}
 				return { savedPath: destPath, error: null };
 			},
@@ -497,8 +527,8 @@ const rpc = defineElectrobunRPC("bun", {
 				const proc = runningProcesses.get(runId);
 				if (proc) { proc.kill(9); runningProcesses.delete(runId); }
 				if (clearCheckpoint && outputPath) {
-					await unlink(checkpointPath(outputPath)).catch(() => {});
-					await unlink(join(outputPath, "train.log")).catch(() => {});
+					await unlink(checkpointPath(exp(outputPath))).catch(() => {});
+					await unlink(join(exp(outputPath), "train.log")).catch(() => {});
 				}
 				return {};
 			},
