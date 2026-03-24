@@ -2,6 +2,7 @@ import { FolderOpen, Cpu, Play, Pause, Square, Trash2 } from "lucide-react";
 import { type TrainingRun, type Asset } from "../lib/types";
 import { RUN_STATUS_LABELS, RUN_STATUS_COLORS, CLASS_COLORS } from "../lib/constants";
 import { type LogProgress } from "../lib/trainLog";
+import { cardHover, statusBadge } from "../lib/styleUtils";
 
 export interface RunCardProps {
   run: TrainingRun;
@@ -29,8 +30,7 @@ export function RunCard({ run, assets, progress, onClick, onStartFresh, onResume
         borderRadius: 8, overflow: "hidden", cursor: "pointer",
         transition: "border-color 0.15s",
       }}
-      onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "#444"; }}
-      onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "var(--border)"; }}
+      {...cardHover}
     >
       {/* Status band / progress bar */}
       {run.status === "training" && progress ? (
@@ -76,11 +76,7 @@ export function RunCard({ run, assets, progress, onClick, onStartFresh, onResume
 
         {/* Status + model */}
         <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <span style={{
-            padding: "2px 7px", borderRadius: 4, fontSize: 11, fontWeight: 600,
-            background: statusColor + "22", border: `1px solid ${statusColor}55`, color: statusColor,
-            letterSpacing: "0.04em", textTransform: "uppercase", flexShrink: 0,
-          }}>
+          <span style={{ ...statusBadge(statusColor), flexShrink: 0 }}>
             {statusLabel}
           </span>
           <span style={{ fontSize: 12, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>

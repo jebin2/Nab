@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { ChevronDown } from "lucide-react";
+import { dropdownItemHover } from "../lib/styleUtils";
 
 type Option = string | { value: string; label: string };
 
@@ -75,8 +76,7 @@ export default function CustomSelect({ value, options, onChange, fontSize = 13, 
                   background: selected ? "rgba(59,130,246,0.08)" : "transparent",
                   transition: "background 0.1s",
                 }}
-                onMouseEnter={e => { if (!selected) (e.currentTarget as HTMLDivElement).style.background = "var(--bg)"; }}
-                onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = selected ? "rgba(59,130,246,0.08)" : "transparent"; }}
+                {...dropdownItemHover(selected)}
               >
                 {l}
               </div>

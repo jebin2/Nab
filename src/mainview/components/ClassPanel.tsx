@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { type BBox, type ClassDef } from "../lib/annotationTypes";
 import { CLASS_COLORS } from "../lib/constants";
+import { accentColorHover } from "../lib/styleUtils";
 
 interface Props {
   classes: ClassDef[];
@@ -58,8 +59,7 @@ export default function ClassPanel({
               color: "var(--text-muted)", padding: 2,
               display: "flex", alignItems: "center",
             }}
-            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--accent)"; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--text-muted)"; }}
+            {...accentColorHover}
           >
             <Plus size={12} />
           </button>

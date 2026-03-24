@@ -5,6 +5,7 @@ import { type TrainingRun } from "../lib/types";
 import { RUN_STATUS_LABELS, RUN_STATUS_COLORS, DEVICES, CLASS_COLORS } from "../lib/constants";
 import { getRPC } from "../lib/rpc";
 import { parseLog, type LogProgress } from "../lib/trainLog";
+import { panel, sectionLabel, statusBadge, dropdownItemHover } from "../lib/styleUtils";
 
 // ── Config strip helpers ───────────────────────────────────────────────────────
 
@@ -97,8 +98,7 @@ function ConfigSelectField({ label, value, options, editable, onChange }: {
               key={opt}
               onClick={() => { onChange(opt); setOpen(false); }}
               style={{ padding: "7px 10px", fontSize: 12, fontFamily: "monospace", cursor: "pointer", color: opt === value ? "var(--accent)" : "var(--text)", background: opt === value ? "rgba(59,130,246,0.08)" : "transparent" }}
-              onMouseEnter={e => { if (opt !== value) (e.currentTarget as HTMLDivElement).style.background = "var(--bg)"; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = opt === value ? "rgba(59,130,246,0.08)" : "transparent"; }}
+              {...dropdownItemHover(opt === value)}
             >
               {opt}
             </div>
@@ -212,7 +212,7 @@ export default function RunDetailView({ run, progress, onClose, onUpdate, onStar
         onBack={onClose}
         title={run.name}
         badge={
-          <span style={{ padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 600, background: statusColor + "22", border: `1px solid ${statusColor}55`, color: statusColor, letterSpacing: "0.04em", textTransform: "uppercase", flexShrink: 0 }}>
+          <span style={{ ...statusBadge(statusColor), padding: "2px 8px", flexShrink: 0 }}>
             {RUN_STATUS_LABELS[run.status]}
           </span>
         }
@@ -314,8 +314,8 @@ export default function RunDetailView({ run, progress, onClose, onUpdate, onStar
         {/* Right: metrics */}
         <div style={{ display: "flex", flexDirection: "column", overflowY: "auto", padding: 16, gap: 12 }}>
 
-          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px" }}>
-            <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--text-muted)", marginBottom: 12 }}>Real-time Validation</div>
+          <div style={panel}>
+            <div style={sectionLabel}>Real-time Validation</div>
             {([["mAP @ .50", mAP50], ["mAP @ .50:.95", mAP5095], ["Precision", progress?.mAP ?? null], ["Recall", null]] as [string, number | null][]).map(([label, value]) => (
               <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 10px", borderRadius: 4, background: "var(--bg)", marginBottom: 6 }}>
                 <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{label}</span>
@@ -325,15 +325,15 @@ export default function RunDetailView({ run, progress, onClose, onUpdate, onStar
           </div>
 
           {(progress?.ramMB != null || progress?.gpuMB != null) && (
-            <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px" }}>
-              <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--text-muted)", marginBottom: 12 }}>Memory</div>
+            <div style={panel}>
+              <div style={sectionLabel}>Memory</div>
               {progress?.ramMB != null && <MemoryBar label="RAM" valueMB={progress.ramMB} peakMB={peakRamMB ?? progress.ramMB} color="var(--accent)" />}
               {progress?.gpuMB != null && <MemoryBar label="GPU" valueMB={progress.gpuMB} peakMB={peakGpuMB ?? progress.gpuMB} color="#A78BFA" />}
             </div>
           )}
 
-          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px" }}>
-            <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--text-muted)", marginBottom: 12 }}>Run Configuration</div>
+          <div style={panel}>
+            <div style={sectionLabel}>Run Configuration</div>
             {([["Model", run.baseModel], ["Epochs", String(run.epochs)], ["Batch", run.batchSize === -1 ? "auto" : String(run.batchSize)], ["Image Size", `${run.imgsz}px`], ["Device", run.device]] as [string, string][]).map(([k, v]) => (
               <div key={k} style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
                 <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{k}</span>
@@ -343,8 +343,8 @@ export default function RunDetailView({ run, progress, onClose, onUpdate, onStar
           </div>
 
           {runMeta?.found && (
-            <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px" }}>
-              <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--text-muted)", marginBottom: 12 }}>Dataset</div>
+            <div style={panel}>
+              <div style={sectionLabel}>Dataset</div>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
                 <span style={{ fontSize: 11, color: "var(--text-muted)" }}>Annotated images</span>
                 <span style={{ fontSize: 11, fontFamily: "monospace", fontWeight: 700, color: "var(--text)" }}>{runMeta.imageCount}</span>
@@ -370,8 +370,8 @@ export default function RunDetailView({ run, progress, onClose, onUpdate, onStar
             </div>
           )}
 
-          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px" }}>
-            <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--text-muted)", marginBottom: 8 }}>Output</div>
+          <div style={panel}>
+            <div style={{ ...sectionLabel, marginBottom: 8 }}>Output</div>
             <div style={{ fontSize: 11, fontFamily: "monospace", color: "var(--text-muted)", wordBreak: "break-all", lineHeight: 1.5 }}>{run.outputPath}</div>
           </div>
 

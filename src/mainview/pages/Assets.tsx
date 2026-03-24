@@ -5,6 +5,7 @@ import { Field, inputStyle } from "../components/FormFields";
 import { CLASS_COLORS } from "../lib/constants";
 import { getRPC } from "../lib/rpc";
 import DeleteConfirmModal from "../components/DeleteConfirmModal";
+import { cardHover, accentHover, deleteHover, pageHeader, primaryBtn, newItemCard } from "../lib/styleUtils";
 
 interface Props {
   assets: Asset[];
@@ -37,16 +38,11 @@ export default function Assets({ assets, runs, onAssetsChange, onOpenAsset }: Pr
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg)" }}>
 
       {/* Header */}
-      <div style={{ height: 56, padding: "0 28px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+      <div style={pageHeader}>
         <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", letterSpacing: "-0.3px" }}>Assets</span>
         <button
           onClick={() => setShowModal(true)}
-          style={{
-            display: "flex", alignItems: "center", gap: 7,
-            padding: "8px 14px", borderRadius: 7, border: "none",
-            background: "var(--accent)", color: "#fff",
-            fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit",
-          }}
+          style={primaryBtn}
         >
           <Plus size={14} /> New Asset
         </button>
@@ -67,15 +63,8 @@ export default function Assets({ assets, runs, onAssetsChange, onOpenAsset }: Pr
 
           <button
             onClick={() => setShowModal(true)}
-            style={{
-              background: "var(--surface)", border: "1px dashed var(--border)",
-              borderRadius: 8, minHeight: 220, cursor: "pointer",
-              display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-              gap: 10, color: "var(--text-muted)", transition: "border-color 0.15s, color 0.15s",
-              fontFamily: "inherit",
-            }}
-            onMouseEnter={e => { const el = e.currentTarget as HTMLButtonElement; el.style.borderColor = "var(--accent)"; el.style.color = "var(--accent)"; }}
-            onMouseLeave={e => { const el = e.currentTarget as HTMLButtonElement; el.style.borderColor = "var(--border)";  el.style.color = "var(--text-muted)"; }}
+            style={newItemCard}
+            {...accentHover}
           >
             <div style={{ width: 36, height: 36, borderRadius: "50%", border: "1.5px dashed currentColor", display: "flex", alignItems: "center", justifyContent: "center" }}>
               <Plus size={16} />
@@ -120,8 +109,7 @@ function AssetCard({ asset, onClick, onDelete }: { asset: Asset; onClick: () => 
         borderRadius: 8, overflow: "hidden", cursor: "pointer",
         transition: "border-color 0.15s",
       }}
-      onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "#444"; }}
-      onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "var(--border)"; }}
+      {...cardHover}
     >
       {/* Thumbnail */}
       <div style={{
@@ -154,8 +142,7 @@ function AssetCard({ asset, onClick, onDelete }: { asset: Asset; onClick: () => 
             display: "flex", alignItems: "center",
             transition: "color 0.12s, background 0.12s",
           }}
-          onMouseEnter={e => { const el = e.currentTarget as HTMLButtonElement; el.style.color = "#EF4444"; el.style.background = "rgba(0,0,0,0.65)"; }}
-          onMouseLeave={e => { const el = e.currentTarget as HTMLButtonElement; el.style.color = "rgba(255,255,255,0.6)"; el.style.background = "rgba(0,0,0,0.4)"; }}
+          {...deleteHover}
         >
           <Trash2 size={13} />
         </button>

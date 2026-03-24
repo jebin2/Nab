@@ -3,6 +3,7 @@ import { ImagePlus, FolderOpen } from "lucide-react";
 import { type ImageEntry } from "../lib/annotationTypes";
 import { loadImageSrc } from "../lib/imageLoader";
 import { useImagePicker } from "../lib/useImagePicker";
+import { accentColorHover } from "../lib/styleUtils";
 
 interface Props {
   images: ImageEntry[];
@@ -160,8 +161,7 @@ function HeaderIconButton({ Icon, title, disabled, onClick }: {
         color: disabled ? "var(--border)" : "var(--text-muted)",
         padding: "2px 3px", display: "flex", alignItems: "center", borderRadius: 4,
       }}
-      onMouseEnter={e => { if (!disabled) (e.currentTarget as HTMLButtonElement).style.color = "var(--accent)"; }}
-      onMouseLeave={e => { if (!disabled) (e.currentTarget as HTMLButtonElement).style.color = "var(--text-muted)"; }}
+      {...(!disabled ? accentColorHover : {})}
     >
       <Icon size={12} />
     </button>

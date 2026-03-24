@@ -114,16 +114,8 @@ function UploadButton({ Icon, label, onClick }: {
         cursor: "pointer", fontFamily: "inherit",
         transition: "border-color 0.15s, color 0.15s",
       }}
-      onMouseEnter={e => {
-        const el = e.currentTarget as HTMLButtonElement;
-        el.style.borderColor = "var(--accent)";
-        el.style.color       = "var(--accent)";
-      }}
-      onMouseLeave={e => {
-        const el = e.currentTarget as HTMLButtonElement;
-        el.style.borderColor = "var(--border)";
-        el.style.color       = "var(--text)";
-      }}
+      onMouseEnter={e => { const el = e.currentTarget as HTMLButtonElement; el.style.borderColor = "var(--accent)"; el.style.color = "var(--accent)"; }}
+      onMouseLeave={e => { const el = e.currentTarget as HTMLButtonElement; el.style.borderColor = "var(--border)"; el.style.color = "var(--text)"; }}
     >
       <Icon size={14} />
       {label}

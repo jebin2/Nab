@@ -7,6 +7,7 @@ import DeleteConfirmModal from "../components/DeleteConfirmModal";
 import { type TrainingRun, type Asset } from "../lib/types";
 import { getRPC } from "../lib/rpc";
 import { parseLog, type LogProgress } from "../lib/trainLog";
+import { accentHover, pageHeader, primaryBtn, newItemCard } from "../lib/styleUtils";
 
 interface Props {
   assets: Asset[];
@@ -113,11 +114,11 @@ export default function Train({ assets, runs, onRunsChange }: Props) {
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg)" }}>
 
-      <div style={{ height: 56, padding: "0 28px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+      <div style={pageHeader}>
         <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", letterSpacing: "-0.3px" }}>Train</span>
         <button
           onClick={() => setShowModal(true)}
-          style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 14px", borderRadius: 7, border: "none", background: "var(--accent)", color: "#fff", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit" }}
+          style={primaryBtn}
         >
           <Plus size={14} /> New Run
         </button>
@@ -140,9 +141,8 @@ export default function Train({ assets, runs, onRunsChange }: Props) {
 
           <button
             onClick={() => setShowModal(true)}
-            style={{ background: "var(--surface)", border: "1px dashed var(--border)", borderRadius: 8, minHeight: 220, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, color: "var(--text-muted)", transition: "border-color 0.15s, color 0.15s", fontFamily: "inherit" }}
-            onMouseEnter={e => { const el = e.currentTarget as HTMLButtonElement; el.style.borderColor = "var(--accent)"; el.style.color = "var(--accent)"; }}
-            onMouseLeave={e => { const el = e.currentTarget as HTMLButtonElement; el.style.borderColor = "var(--border)"; el.style.color = "var(--text-muted)"; }}
+            style={newItemCard}
+            {...accentHover}
           >
             <div style={{ width: 36, height: 36, borderRadius: "50%", border: "1.5px dashed currentColor", display: "flex", alignItems: "center", justifyContent: "center" }}>
               <Plus size={16} />
