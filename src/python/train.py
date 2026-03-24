@@ -24,6 +24,7 @@ Progress and results are written to stdout as newline-delimited JSON:
 import json
 import os
 import shutil
+import subprocess
 import sys
 import yaml
 from pathlib import Path
@@ -33,6 +34,73 @@ from pathlib import Path
 
 def emit(obj: dict):
     print(json.dumps(obj), flush=True)
+
+
+def load_model(base_model: str, checkpoint: Path, resuming: bool):
+    from ultralytics import YOLO
+    if resuming:
+        emit({"type": "stderr", "text": f"[train] Resuming from checkpoint: {checkpoint}"})
+        return YOLO(str(checkpoint))
+    return YOLO(f"{base_model}.pt")
+
+
+def is_cuda_unavailable_error(err: Exception) -> bool:
+    text = str(err).lower()
+    return (
+        "cuda-capable device(s) is/are busy or unavailable" in text or
+        "cudaerrordevicesunavailable" in text or
+        ("cuda error" in text and "busy or unavailable" in text)
+    )
+
+
+def train_once(model, data_yaml: Path, epochs: int, batch_size: int, imgsz: int, device, output_path: Path, resuming: bool):
+    return model.train(
+        data      = str(data_yaml),
+        epochs    = epochs,
+        batch     = batch_size,
+        imgsz     = imgsz,
+        device    = device,
+        project   = str(output_path),
+        name      = "weights",
+        exist_ok  = True,
+        resume    = resuming,
+        verbose   = False,
+    )
+
+
+def retry_on_cpu(config: dict):
+    cpu_config = dict(config)
+    cpu_config["device"] = "cpu"
+    cpu_config["resumeFromCheckpoint"] = False
+
+    env = dict(os.environ)
+    env["CUDA_VISIBLE_DEVICES"] = "-1"
+    env["YOLOSTUDIO_CPU_FALLBACK"] = "1"
+
+    proc = subprocess.Popen(
+        [sys.executable, __file__],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,
+    )
+    proc.stdin.write(json.dumps(cpu_config))
+    proc.stdin.close()
+
+    for line in proc.stdout:
+        sys.stdout.write(line)
+        sys.stdout.flush()
+
+    stderr_output = proc.stderr.read()
+    proc.wait()
+
+    if stderr_output:
+        for line in stderr_output.splitlines():
+            emit({"type": "stderr", "text": f"[train] {line}"})
+
+    if proc.returncode != 0:
+        raise RuntimeError((stderr_output or "CPU fallback failed").strip())
 
 
 def build_dataset(asset_paths: list[str], class_map: list[str], output_dir: Path) -> Path:
@@ -140,15 +208,10 @@ def main():
 
     # Check for a checkpoint from a previous paused run — resume if found.
     checkpoint = output_path / "weights" / "weights" / "last.pt"
-    resuming   = checkpoint.exists()
+    resuming   = bool(config.get("resumeFromCheckpoint", checkpoint.exists()))
 
     try:
-        from ultralytics import YOLO
-        if resuming:
-            emit({"type": "stderr", "text": f"[train] Resuming from checkpoint: {checkpoint}"})
-            model = YOLO(str(checkpoint))
-        else:
-            model = YOLO(f"{base_model}.pt")
+        model = load_model(base_model, checkpoint, resuming)
     except Exception as e:
         emit({"type": "error", "message": f"Failed to load model: {e}"})
         sys.exit(1)
@@ -158,21 +221,29 @@ def main():
 
     # Train (or resume).
     try:
-        results = model.train(
-            data      = str(data_yaml),
-            epochs    = epochs,
-            batch     = batch_size,
-            imgsz     = imgsz,
-            device    = device if device != "auto" else None,
-            project   = str(output_path),
-            name      = "weights",
-            exist_ok  = True,
-            resume    = resuming,
-            verbose   = False,
+        results = train_once(
+            model, data_yaml, epochs, batch_size, imgsz,
+            device if device != "auto" else None,
+            output_path, resuming,
         )
     except Exception as e:
-        emit({"type": "error", "message": f"Training failed: {e}"})
-        sys.exit(1)
+        if (
+            device == "auto" and
+            os.environ.get("YOLOSTUDIO_CPU_FALLBACK") != "1" and
+            is_cuda_unavailable_error(e)
+        ):
+            emit({"type": "stderr", "text": "[train] CUDA unavailable for auto device; retrying on CPU…"})
+            try:
+                if resuming:
+                    emit({"type": "stderr", "text": "[train] CPU fallback disables checkpoint resume and restarts from base model."})
+                retry_on_cpu(config)
+                return
+            except Exception as cpu_err:
+                emit({"type": "error", "message": f"Training failed after CPU fallback: {cpu_err}"})
+                sys.exit(1)
+        else:
+            emit({"type": "error", "message": f"Training failed: {e}"})
+            sys.exit(1)
 
     # Extract final metrics.
     try:
