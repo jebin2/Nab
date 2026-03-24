@@ -164,6 +164,31 @@ def build_dataset(asset_paths: list[str], class_map: list[str], output_dir: Path
     return data_yaml
 
 
+# ── memory helpers ─────────────────────────────────────────────────────────────
+
+def get_ram_mb() -> int | None:
+    """RSS memory of this process in MB — reads /proc/self/status, no extra deps."""
+    try:
+        with open("/proc/self/status") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1]) // 1024   # kB → MB
+    except Exception:
+        pass
+    return None
+
+
+def get_gpu_mb() -> int | None:
+    """GPU memory currently allocated by PyTorch in MB, or None if not on GPU."""
+    try:
+        import torch
+        if torch.cuda.is_available():
+            return torch.cuda.memory_allocated() // (1024 * 1024)
+    except Exception:
+        pass
+    return None
+
+
 # ── training callback ──────────────────────────────────────────────────────────
 
 def make_on_train_epoch_end(total_epochs: int):
@@ -175,6 +200,8 @@ def make_on_train_epoch_end(total_epochs: int):
             "epochs": total_epochs,
             "loss":   round(float(trainer.loss), 6) if trainer.loss is not None else None,
             "mAP":    round(float(metrics.get("metrics/mAP50(B)", 0)), 4) if metrics else None,
+            "ramMB":  get_ram_mb(),
+            "gpuMB":  get_gpu_mb(),
         })
     return on_train_epoch_end
 

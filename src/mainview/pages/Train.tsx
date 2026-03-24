@@ -13,7 +13,7 @@ interface Props {
 
 // ── log parsing ────────────────────────────────────────────────────────────────
 
-type LogProgress = { epoch: number; epochs: number; loss: number | null; mAP: number | null };
+type LogProgress = { epoch: number; epochs: number; loss: number | null; mAP: number | null; ramMB: number | null; gpuMB: number | null };
 type LogDone     = { mAP50: number; mAP50_95: number; weightsPath: string };
 type LogError    = { message: string };
 
@@ -25,7 +25,7 @@ function parseLog(lines: string[]): { progress?: LogProgress; done?: LogDone; er
   for (const line of lines) {
     try {
       const ev = JSON.parse(line);
-      if (ev.type === "progress") progress = { epoch: ev.epoch, epochs: ev.epochs, loss: ev.loss ?? null, mAP: ev.mAP ?? null };
+      if (ev.type === "progress") progress = { epoch: ev.epoch, epochs: ev.epochs, loss: ev.loss ?? null, mAP: ev.mAP ?? null, ramMB: ev.ramMB ?? null, gpuMB: ev.gpuMB ?? null };
       if (ev.type === "done")    done    = { mAP50: ev.mAP50, mAP50_95: ev.mAP50_95, weightsPath: ev.weightsPath };
       if (ev.type === "error")   error   = { message: ev.message };
     } catch {}
@@ -415,6 +415,21 @@ function RunCard({ run, assets, progress, onClick, onStartFresh, onResume, onPau
   );
 }
 
+function MemoryBar({ label, valueMB, peakMB, color }: { label: string; valueMB: number; peakMB: number; color: string }) {
+  const fmt = (mb: number) => mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb} MB`;
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+      <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{label}</span>
+      <div style={{ textAlign: "right" }}>
+        <span style={{ fontSize: 12, fontFamily: "monospace", fontWeight: 700, color }}>{fmt(valueMB)}</span>
+        {peakMB > valueMB && (
+          <div style={{ fontSize: 10, fontFamily: "monospace", color: "var(--text-muted)" }}>↑ {fmt(peakMB)}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ActionBtn({ Icon, color, title, onClick, danger }: {
   Icon: React.ElementType; color: string; title: string; onClick: () => void; danger?: boolean;
 }) {
@@ -451,6 +466,22 @@ function RunDetailView({ run, assets, progress, onClose, onStartFresh, onResume,
 }) {
   const [lines, setLines] = useState<string[]>([]);
   const logEndRef = useRef<HTMLDivElement>(null);
+
+  const peakRamMB = useMemo(() => {
+    let peak = 0;
+    for (const line of lines) {
+      try { const ev = JSON.parse(line); if (ev.type === "progress" && ev.ramMB != null) peak = Math.max(peak, ev.ramMB); } catch {}
+    }
+    return peak || null;
+  }, [lines]);
+
+  const peakGpuMB = useMemo(() => {
+    let peak = 0;
+    for (const line of lines) {
+      try { const ev = JSON.parse(line); if (ev.type === "progress" && ev.gpuMB != null) peak = Math.max(peak, ev.gpuMB); } catch {}
+    }
+    return peak || null;
+  }, [lines]);
 
   // Poll the log whenever the detail view is open — not just while "training",
   // because setup messages (venv, pip install) are written before status flips.
@@ -723,6 +754,20 @@ function RunDetailView({ run, assets, progress, onClose, onStartFresh, onResume,
               </div>
             ))}
           </div>
+
+          {(progress?.ramMB != null || progress?.gpuMB != null) && (
+            <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px" }}>
+              <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--text-muted)", marginBottom: 12 }}>
+                Memory
+              </div>
+              {progress?.ramMB != null && (
+                <MemoryBar label="RAM" valueMB={progress.ramMB} peakMB={peakRamMB ?? progress.ramMB} color="var(--accent)" />
+              )}
+              {progress?.gpuMB != null && (
+                <MemoryBar label="GPU" valueMB={progress.gpuMB} peakMB={peakGpuMB ?? progress.gpuMB} color="#A78BFA" />
+              )}
+            </div>
+          )}
 
           <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px" }}>
             <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--text-muted)", marginBottom: 12 }}>
