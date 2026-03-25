@@ -152,7 +152,8 @@ def build_dataset(images: list[dict], class_map: list[str], output_dir: Path) ->
     with open(data_yaml, "w") as f:
         yaml.dump(yaml_content, f, default_flow_style=False)
 
-    return data_yaml
+    image_count = len(list(img_dir.iterdir()))
+    return data_yaml, image_count
 
 
 # ── memory helpers ─────────────────────────────────────────────────────────────
@@ -185,14 +186,45 @@ def get_gpu_mb() -> int | None:
 def make_on_train_epoch_end(total_epochs: int):
     def on_train_epoch_end(trainer):
         metrics = trainer.metrics or {}
+
+        # Individual epoch-averaged losses from tloss tensor [box, cls, dfl].
+        loss_box = loss_cls = loss_dfl = None
+        try:
+            tl = trainer.tloss
+            if tl is not None and hasattr(tl, '__len__') and len(tl) >= 3:
+                loss_box = round(float(tl[0]), 6)
+                loss_cls = round(float(tl[1]), 6)
+                loss_dfl = round(float(tl[2]), 6)
+        except Exception:
+            pass
+
+        # Validation precision & recall (available after each val pass).
+        precision = recall = None
+        try:
+            p = metrics.get("metrics/precision(B)")
+            r = metrics.get("metrics/recall(B)")
+            if p is not None: precision = round(float(p), 4)
+            if r is not None: recall    = round(float(r), 4)
+        except Exception:
+            pass
+
+        # Early stopping: Ultralytics sets trainer.stop = True when patience runs out.
+        early_stop = bool(getattr(trainer, "stop", False))
+
         emit({
-            "type":   "progress",
-            "epoch":  trainer.epoch + 1,
-            "epochs": total_epochs,
-            "loss":   round(float(trainer.loss), 6) if trainer.loss is not None else None,
-            "mAP":    round(float(metrics.get("metrics/mAP50(B)", 0)), 4) if metrics else None,
-            "ramMB":  get_ram_mb(),
-            "gpuMB":  get_gpu_mb(),
+            "type":        "progress",
+            "epoch":       trainer.epoch + 1,
+            "epochs":      total_epochs,
+            "loss":        round(float(trainer.loss), 6) if trainer.loss is not None else None,
+            "lossBox":     loss_box,
+            "lossCls":     loss_cls,
+            "lossDfl":     loss_dfl,
+            "mAP":         round(float(metrics.get("metrics/mAP50(B)", 0)), 4) if metrics else None,
+            "precision":   precision,
+            "recall":      recall,
+            "ramMB":       get_ram_mb(),
+            "gpuMB":       get_gpu_mb(),
+            "earlyStop":   early_stop,
         })
     return on_train_epoch_end
 
@@ -219,7 +251,8 @@ def main():
 
     # Build merged dataset from the locked image list.
     try:
-        data_yaml = build_dataset(images, class_map, output_path)
+        data_yaml, dataset_size = build_dataset(images, class_map, output_path)
+        emit({"type": "dataset", "imageCount": dataset_size})
     except Exception as e:
         emit({"type": "error", "message": f"Failed to build dataset: {e}"})
         sys.exit(1)

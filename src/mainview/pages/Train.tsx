@@ -157,7 +157,7 @@ export default function Train({ assets, runs, onRunsChange }: Props) {
       </div>
 
       {showModal && (
-        <NewRunModal assets={assets} runs={runs} onClose={() => setShowModal(false)} onCreate={run => { onRunsChange([...runs, run]); setShowModal(false); }} />
+        <NewRunModal assets={assets} runs={runs} onClose={() => setShowModal(false)} onCreate={run => { onRunsChange([...runs, run]); setShowModal(false); setDetailRun(run); }} />
       )}
 
       {deleteTarget && (

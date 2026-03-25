@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { Play, Pause, Square, Terminal, ChevronDown } from "lucide-react";
+import { Play, Pause, Square, Terminal, ChevronDown, Info } from "lucide-react";
 import DetailPageHeader, { HeaderBtn } from "./DetailPageHeader";
 import { type TrainingRun } from "../lib/types";
 import { RUN_STATUS_LABELS, RUN_STATUS_COLORS, DEVICES, CLASS_COLORS } from "../lib/constants";
@@ -133,15 +133,106 @@ function LogLine({ line }: { line: string }) {
     if (ev.type === "progress") return (
       <div style={{ color: "var(--text)", marginBottom: 1 }}>
         <span style={{ color: "var(--text-muted)" }}>epoch {String(ev.epoch).padStart(4)} </span>
-        {ev.loss != null && <span>loss <span style={{ color: "#F97316" }}>{ev.loss.toFixed(4)}</span>  </span>}
-        {ev.mAP  != null && <span>mAP <span style={{ color: "#22C55E" }}>{ev.mAP.toFixed(4)}</span></span>}
+        {ev.lossBox != null && <span>box <span style={{ color: "#F97316" }}>{ev.lossBox.toFixed(4)}</span>  </span>}
+        {ev.lossCls != null && <span>cls <span style={{ color: "#22C55E" }}>{ev.lossCls.toFixed(4)}</span>  </span>}
+        {ev.lossDfl != null && <span>dfl <span style={{ color: "#A78BFA" }}>{ev.lossDfl.toFixed(4)}</span>  </span>}
+        {ev.mAP     != null && <span>mAP <span style={{ color: "var(--accent)" }}>{ev.mAP.toFixed(4)}</span></span>}
+        {ev.earlyStop && <span style={{ color: "#F59E0B", marginLeft: 6 }}>⏹ early stop</span>}
       </div>
     );
+    if (ev.type === "dataset") return <div style={{ color: "var(--text-muted)", marginBottom: 2, opacity: 0.7 }}>dataset: {ev.imageCount} annotated images</div>;
     if (ev.type === "done")   return <div style={{ color: "#22C55E", marginTop: 4, fontWeight: 700 }}>✓ done — mAP50: {ev.mAP50.toFixed(4)}  mAP50-95: {ev.mAP50_95.toFixed(4)}</div>;
     if (ev.type === "error")  return <div style={{ color: "#EF4444", marginTop: 4 }}>✗ error: {ev.message}</div>;
     if (ev.type === "stderr") return <div style={{ color: "#F59E0B", marginBottom: 1, opacity: 0.8 }}>{ev.text}</div>;
   } catch {}
   return <div style={{ color: "var(--text-muted)", marginBottom: 1 }}>{line}</div>;
+}
+
+// ── MetricsInfoModal ──────────────────────────────────────────────────────────
+
+function MetricsInfoModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center" }}
+      onClick={onClose}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "28px 32px", maxWidth: 520, width: "90%", maxHeight: "85vh", overflowY: "auto", boxShadow: "0 24px 64px rgba(0,0,0,0.5)" }}
+      >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+          <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>Understanding Your Training Metrics</span>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: 20, lineHeight: 1, padding: 0 }}>×</button>
+        </div>
+
+        <Section title="Loss Curves — Lower is Better">
+          <p>Loss measures how wrong the model is. All three curves should steadily fall and flatten as training progresses.</p>
+          <Metric color="#F97316" name="Box Loss" desc="How accurately the model places bounding boxes around objects. High early on — drops fast." />
+          <Metric color="#22C55E" name="Cls Loss" desc="How confidently the model identifies the correct class (e.g. car vs. truck). Drops steadily with more examples." />
+          <Metric color="#A78BFA" name="Dfl Loss" desc="Distribution Focal Loss — fine-tunes box edge sharpness. Usually the smallest of the three." />
+          <Callout>A healthy run looks like a smooth downward curve that levels off near the end. Spiky or rising loss usually means your learning rate is too high, or your dataset has noisy labels.</Callout>
+        </Section>
+
+        <Section title="Accuracy Metrics — Higher is Better">
+          <Metric color="var(--accent)" name="mAP @ .50" desc="Mean Average Precision at 50% overlap. The main score: 0 = useless, 1 = perfect. Aim for >0.70 for reliable detection." />
+          <Metric color="var(--accent)" name="mAP @ .50:.95" desc="Stricter score averaged across overlap thresholds 50%–95%. More demanding — good models score 0.40–0.60+." />
+          <Metric color="var(--accent)" name="Precision" desc="Of all detections made, what fraction were correct? High precision means few false alarms." />
+          <Metric color="var(--accent)" name="Recall" desc="Of all real objects, what fraction did the model find? High recall means few missed detections." />
+          <Callout>Precision and recall trade off against each other. A good model balances both above 0.80.</Callout>
+        </Section>
+
+        <Section title="Dataset Size Guidelines">
+          <p>YOLO learns by seeing many examples. Small datasets lead to overfitting — the model memorises training images but fails on new ones.</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
+            <Row label="< 50 images" value="Too few — expect poor results" color="#EF4444" />
+            <Row label="50–200 images" value="Borderline — use data augmentation" color="#F59E0B" />
+            <Row label="200–500 images" value="Good starting point" color="#22C55E" />
+            <Row label="500+ images" value="Excellent — model can generalise well" color="#22C55E" />
+          </div>
+          <Callout>Aim for at least 50–100 annotated images per class. More diversity beats sheer quantity.</Callout>
+        </Section>
+
+        <Section title="Early Stopping">
+          <p>If the model stops improving for several epochs in a row, training halts automatically. This is normal and saves time — it means the model has converged. You'll see the <span style={{ color: "#F59E0B", fontFamily: "monospace", fontWeight: 700 }}>EARLY STOP</span> badge when this happens.</p>
+        </Section>
+      </div>
+    </div>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div style={{ marginBottom: 24 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-muted)", marginBottom: 10 }}>{title}</div>
+      <div style={{ fontSize: 13, color: "var(--text)", lineHeight: 1.6 }}>{children}</div>
+    </div>
+  );
+}
+
+function Metric({ color, name, desc }: { color: string; name: string; desc: string }) {
+  return (
+    <div style={{ display: "flex", gap: 10, marginBottom: 8, alignItems: "flex-start" }}>
+      <div style={{ width: 10, height: 10, borderRadius: 2, background: color, flexShrink: 0, marginTop: 3 }} />
+      <div><span style={{ fontWeight: 600, color: "var(--text)" }}>{name}</span> — {desc}</div>
+    </div>
+  );
+}
+
+function Callout({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ marginTop: 10, padding: "8px 12px", borderRadius: 6, background: "rgba(59,130,246,0.08)", border: "1px solid rgba(59,130,246,0.2)", fontSize: 12, color: "var(--text)", lineHeight: 1.5 }}>
+      {children}
+    </div>
+  );
+}
+
+function Row({ label, value, color }: { label: string; value: string; color: string }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+      <span style={{ fontFamily: "monospace", color: "var(--text-muted)" }}>{label}</span>
+      <span style={{ color }}>{value}</span>
+    </div>
+  );
 }
 
 // ── RunDetailView ─────────────────────────────────────────────────────────────
@@ -158,8 +249,9 @@ interface Props {
 }
 
 export default function RunDetailView({ run, progress, onClose, onUpdate, onStartFresh, onResume, onPause, onStop }: Props) {
-  const [lines,   setLines]   = useState<string[]>([]);
-  const [runMeta, setRunMeta] = useState<{ found: boolean; classMap: string[]; imageCount: number; newCount: number; modifiedCount: number } | null>(null);
+  const [lines,          setLines]          = useState<string[]>([]);
+  const [runMeta,        setRunMeta]        = useState<{ found: boolean; classMap: string[]; imageCount: number; newCount: number; modifiedCount: number } | null>(null);
+  const [showMetricsInfo, setShowMetricsInfo] = useState(false);
   const logEndRef = useRef<HTMLDivElement>(null);
 
   const peakRamMB = useMemo(() => { let p = 0; for (const l of lines) { try { const ev = JSON.parse(l); if (ev.type === "progress" && ev.ramMB != null) p = Math.max(p, ev.ramMB); } catch {} } return p || null; }, [lines]);
@@ -181,7 +273,7 @@ export default function RunDetailView({ run, progress, onClose, onUpdate, onStar
     getRPC().request.readRunMeta({ outputPath: run.outputPath }).then(setRunMeta).catch(() => {});
   }, [run.id, run.status]);
 
-  const { done } = parseLog(lines);
+  const { done, datasetSize, earlyStopTriggered } = parseLog(lines);
   const statusColor  = RUN_STATUS_COLORS[run.status];
   const pct          = run.status === "done" ? 100 : progress ? Math.round((progress.epoch / progress.epochs) * 100) : 0;
   const totalEpochs  = progress?.epochs ?? run.epochs;
@@ -189,18 +281,35 @@ export default function RunDetailView({ run, progress, onClose, onUpdate, onStar
   const mAP50   = done?.mAP50    ?? run.mAP    ?? progress?.mAP ?? null;
   const mAP5095 = done?.mAP50_95 ?? null;
 
-  const { chartPoints, liveDot } = useMemo(() => {
-    const pts: Array<{ epoch: number; loss: number }> = [];
-    for (const line of lines) { try { const ev = JSON.parse(line); if (ev.type === "progress" && ev.loss != null) pts.push({ epoch: ev.epoch, loss: ev.loss }); } catch {} }
-    if (pts.length < 2) return { chartPoints: "", liveDot: null as { cx: number; cy: number } | null };
-    const maxE = pts[pts.length - 1].epoch;
-    const losses = pts.map(d => d.loss);
-    const minL = Math.min(...losses);
-    const rangeL = (Math.max(...losses) - minL) || 1;
-    const toXY = (d: { epoch: number; loss: number }) => ({ x: (d.epoch / maxE) * 800, y: 200 - ((d.loss - minL) / rangeL) * 160 - 20 });
-    const points = pts.map(toXY);
-    const last = points[points.length - 1];
-    return { chartPoints: points.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" "), liveDot: run.status === "training" ? { cx: last.x, cy: last.y } : null };
+  // Build per-curve point arrays for box / cls / dfl losses.
+  const { curves, liveDots } = useMemo(() => {
+    type Pt = { epoch: number; loss: number };
+    const box: Pt[] = [], cls: Pt[] = [], dfl: Pt[] = [];
+    for (const line of lines) {
+      try {
+        const ev = JSON.parse(line);
+        if (ev.type !== "progress") continue;
+        if (ev.lossBox != null) box.push({ epoch: ev.epoch, loss: ev.lossBox });
+        if (ev.lossCls != null) cls.push({ epoch: ev.epoch, loss: ev.lossCls });
+        if (ev.lossDfl != null) dfl.push({ epoch: ev.epoch, loss: ev.lossDfl });
+      } catch {}
+    }
+    const allPts = [...box, ...cls, ...dfl];
+    if (allPts.length < 2) return { curves: null, liveDots: null };
+
+    const maxE  = Math.max(...allPts.map(p => p.epoch));
+    const allL  = allPts.map(p => p.loss);
+    const minL  = Math.min(...allL);
+    const rangeL = (Math.max(...allL) - minL) || 1;
+    const toXY  = (p: Pt) => ({ x: (p.epoch / maxE) * 800, y: 200 - ((p.loss - minL) / rangeL) * 160 - 20 });
+    const toStr = (pts: Pt[]) => pts.length < 2 ? "" : pts.map(p => { const {x,y} = toXY(p); return `${x.toFixed(1)},${y.toFixed(1)}`; }).join(" ");
+
+    const live = run.status === "training";
+    const lastXY = (pts: Pt[]) => pts.length > 0 ? toXY(pts[pts.length - 1]) : null;
+    return {
+      curves: { box: toStr(box), cls: toStr(cls), dfl: toStr(dfl) },
+      liveDots: live ? { box: lastXY(box), cls: lastXY(cls), dfl: lastXY(dfl) } : null,
+    };
   }, [lines, run.status]);
 
   const editable = run.status === "idle" || run.status === "paused";
@@ -250,21 +359,46 @@ export default function RunDetailView({ run, progress, onClose, onUpdate, onStar
               {(run.status === "installing" || run.status === "training") && <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--accent)", display: "inline-block", animation: "pulse 1.5s infinite" }} />}
               {run.status === "paused" && <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#3B82F6", display: "inline-block" }} />}
               <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--text)" }}>Live Network Loss</span>
+              <button
+                onClick={() => setShowMetricsInfo(true)}
+                title="What do these numbers mean?"
+                style={{ background: "none", border: "none", cursor: "pointer", padding: 2, color: "var(--text-muted)", display: "flex", alignItems: "center", opacity: 0.6 }}
+                onMouseEnter={e => (e.currentTarget.style.opacity = "1")}
+                onMouseLeave={e => (e.currentTarget.style.opacity = "0.6")}
+              ><Info size={13} /></button>
               {run.status === "training" && <span style={{ background: "var(--surface-2)", border: "1px solid var(--accent)33", color: "var(--accent)", fontSize: 10, padding: "1px 7px", borderRadius: 3, fontFamily: "monospace" }}>Training…</span>}
               {run.status === "paused"   && <span style={{ background: "var(--surface-2)", border: "1px solid #3B82F633", color: "#3B82F6", fontSize: 10, padding: "1px 7px", borderRadius: 3, fontFamily: "monospace" }}>Paused</span>}
             </div>
 
+            {/* Legend */}
+            {curves && (
+              <div style={{ display: "flex", gap: 14, marginBottom: 8 }}>
+                {([["Box", "#F97316", curves.box], ["Cls", "#22C55E", curves.cls], ["Dfl", "#A78BFA", curves.dfl]] as [string, string, string][])
+                  .filter(([,, pts]) => pts)
+                  .map(([label, color]) => (
+                    <div key={label} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                      <div style={{ width: 18, height: 2, background: color, borderRadius: 1 }} />
+                      <span style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "monospace" }}>{label}</span>
+                    </div>
+                  ))}
+              </div>
+            )}
+
             <div style={{ height: 160, position: "relative", marginBottom: 4 }}>
               <svg viewBox="0 0 800 200" preserveAspectRatio="none" width="100%" height="100%" style={{ position: "absolute", inset: 0 }}>
                 {[40, 80, 120, 160].map(y => <line key={y} x1="0" y1={y} x2="800" y2={y} stroke="var(--border)" strokeWidth="1" />)}
-                {chartPoints ? (
-                  <polyline fill="none" stroke="#3B82F6" strokeWidth="3" strokeLinejoin="round" points={chartPoints} vectorEffect="non-scaling-stroke" />
-                ) : (
+                {curves ? (<>
+                  {curves.box && <polyline fill="none" stroke="#F97316" strokeWidth="2.5" strokeLinejoin="round" points={curves.box} vectorEffect="non-scaling-stroke" />}
+                  {curves.cls && <polyline fill="none" stroke="#22C55E" strokeWidth="2.5" strokeLinejoin="round" points={curves.cls} vectorEffect="non-scaling-stroke" />}
+                  {curves.dfl && <polyline fill="none" stroke="#A78BFA" strokeWidth="2.5" strokeLinejoin="round" points={curves.dfl} vectorEffect="non-scaling-stroke" />}
+                  {liveDots?.box && <circle cx={liveDots.box.x} cy={liveDots.box.y} r="4" fill="#F97316" />}
+                  {liveDots?.cls && <circle cx={liveDots.cls.x} cy={liveDots.cls.y} r="4" fill="#22C55E" />}
+                  {liveDots?.dfl && <circle cx={liveDots.dfl.x} cy={liveDots.dfl.y} r="4" fill="#A78BFA" />}
+                </>) : (
                   <text x="400" y="100" textAnchor="middle" fill="var(--text-muted)" fontSize="14" fontFamily="monospace">
                     {run.status === "idle" ? "Not started" : "Waiting for first epoch…"}
                   </text>
                 )}
-                {liveDot && <circle cx={liveDot.cx} cy={liveDot.cy} r="5" fill="#3B82F6" />}
               </svg>
               <div style={{ position: "absolute", bottom: 0, left: 0, fontSize: 9, color: "var(--text-muted)", fontFamily: "monospace" }}>Epoch 0</div>
               <div style={{ position: "absolute", bottom: 0, right: 0, fontSize: 9, color: "var(--text-muted)", fontFamily: "monospace" }}>Epoch {run.epochs}</div>
@@ -283,12 +417,29 @@ export default function RunDetailView({ run, progress, onClose, onUpdate, onStar
               <div style={{ display: "flex", gap: 20, flexShrink: 0 }}>
                 <div>
                   <div style={{ fontSize: 9, color: "var(--text-muted)", fontFamily: "monospace", textTransform: "uppercase" }}>Current Epoch</div>
-                  <div style={{ fontSize: 16, fontFamily: "monospace", color: "var(--text)" }}>{currentEpoch}/{totalEpochs}</div>
+                  <div style={{ fontSize: 16, fontFamily: "monospace", color: "var(--text)" }}>
+                    {currentEpoch}/{totalEpochs}
+                    {(earlyStopTriggered || progress?.earlyStop) && (
+                      <span style={{ fontSize: 9, marginLeft: 6, color: "#F59E0B", fontFamily: "monospace", verticalAlign: "middle" }}>EARLY STOP</span>
+                    )}
+                  </div>
                 </div>
-                {progress?.loss != null && (
+                {progress?.lossBox != null && (
                   <div>
-                    <div style={{ fontSize: 9, color: "var(--text-muted)", fontFamily: "monospace", textTransform: "uppercase" }}>Box Loss</div>
-                    <div style={{ fontSize: 16, fontFamily: "monospace", color: "#F97316" }}>{progress.loss.toFixed(4)}</div>
+                    <div style={{ fontSize: 9, color: "#F97316", fontFamily: "monospace", textTransform: "uppercase" }}>Box</div>
+                    <div style={{ fontSize: 14, fontFamily: "monospace", color: "#F97316" }}>{progress.lossBox.toFixed(4)}</div>
+                  </div>
+                )}
+                {progress?.lossCls != null && (
+                  <div>
+                    <div style={{ fontSize: 9, color: "#22C55E", fontFamily: "monospace", textTransform: "uppercase" }}>Cls</div>
+                    <div style={{ fontSize: 14, fontFamily: "monospace", color: "#22C55E" }}>{progress.lossCls.toFixed(4)}</div>
+                  </div>
+                )}
+                {progress?.lossDfl != null && (
+                  <div>
+                    <div style={{ fontSize: 9, color: "#A78BFA", fontFamily: "monospace", textTransform: "uppercase" }}>Dfl</div>
+                    <div style={{ fontSize: 14, fontFamily: "monospace", color: "#A78BFA" }}>{progress.lossDfl.toFixed(4)}</div>
                   </div>
                 )}
               </div>
@@ -316,7 +467,7 @@ export default function RunDetailView({ run, progress, onClose, onUpdate, onStar
 
           <div style={panel}>
             <div style={sectionLabel}>Real-time Validation</div>
-            {([["mAP @ .50", mAP50], ["mAP @ .50:.95", mAP5095], ["Precision", progress?.mAP ?? null], ["Recall", null]] as [string, number | null][]).map(([label, value]) => (
+            {([["mAP @ .50", mAP50], ["mAP @ .50:.95", mAP5095], ["Precision", progress?.precision ?? null], ["Recall", progress?.recall ?? null]] as [string, number | null][]).map(([label, value]) => (
               <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 10px", borderRadius: 4, background: "var(--bg)", marginBottom: 6 }}>
                 <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{label}</span>
                 <span style={{ fontFamily: "monospace", fontSize: 13, fontWeight: 700, color: value != null ? "var(--accent)" : "var(--text-muted)" }}>{value != null ? value.toFixed(3) : "—"}</span>
@@ -345,6 +496,14 @@ export default function RunDetailView({ run, progress, onClose, onUpdate, onStar
           {runMeta?.found && (
             <div style={panel}>
               <div style={sectionLabel}>Dataset</div>
+              {(datasetSize ?? runMeta.imageCount) < 50 && (
+                <div style={{ marginBottom: 10, padding: "8px 10px", borderRadius: 6, background: "#F59E0B18", border: "1px solid #F59E0B44" }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#F59E0B", marginBottom: 3 }}>⚠ Small dataset</div>
+                  <div style={{ fontSize: 11, color: "#F59E0B", opacity: 0.85, lineHeight: 1.5 }}>
+                    {datasetSize ?? runMeta.imageCount} images is too few for reliable results. Aim for 50–100+ per class to avoid overfitting.
+                  </div>
+                </div>
+              )}
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
                 <span style={{ fontSize: 11, color: "var(--text-muted)" }}>Annotated images</span>
                 <span style={{ fontSize: 11, fontFamily: "monospace", fontWeight: 700, color: "var(--text)" }}>{runMeta.imageCount}</span>
@@ -377,6 +536,8 @@ export default function RunDetailView({ run, progress, onClose, onUpdate, onStar
 
         </div>
       </div>
+
+      {showMetricsInfo && <MetricsInfoModal onClose={() => setShowMetricsInfo(false)} />}
     </div>
   );
 }
