@@ -6,9 +6,10 @@ import { useImagePicker } from "../lib/useImagePicker";
 
 interface Props {
   onLoad: (entries: ImageEntry[]) => void;
+  importProgress?: { done: number; total: number } | null;
 }
 
-export default function UploadZone({ onLoad }: Props) {
+export default function UploadZone({ onLoad, importProgress }: Props) {
   const [dragging, setDragging] = useState(false);
   const { openImages, openFolder, loading } = useImagePicker(onLoad);
 
@@ -42,7 +43,9 @@ export default function UploadZone({ onLoad }: Props) {
         transition: "border-color 0.15s, background 0.15s",
       }}
     >
-      {loading ? (
+      {importProgress ? (
+        <CopyProgress done={importProgress.done} total={importProgress.total} />
+      ) : loading ? (
         <LoadingState />
       ) : (
         <>
@@ -81,6 +84,23 @@ function LoadingState() {
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
       <Loader size={28} color="var(--accent)" style={{ animation: "spin 1s linear infinite" }} />
       <span style={{ fontSize: 13, color: "var(--text-muted)" }}>Loading images…</span>
+    </div>
+  );
+}
+
+function CopyProgress({ done, total }: { done: number; total: number }) {
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
+      <Loader size={28} color="var(--accent)" style={{ animation: "spin 1s linear infinite" }} />
+      <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>Copying images…</div>
+      <div style={{ width: 220, height: 6, borderRadius: 3, background: "var(--border)", overflow: "hidden" }}>
+        <div style={{
+          height: "100%", borderRadius: 3, background: "var(--accent)",
+          width: `${pct}%`, transition: "width 0.15s",
+        }} />
+      </div>
+      <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{done} / {total}</div>
     </div>
   );
 }

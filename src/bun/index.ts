@@ -68,8 +68,8 @@ type SnapEntry = { img: string; lbl: string; mtime: number };
 async function scanAnnotatedImages(assetPaths: string[]): Promise<SnapEntry[]> {
 	const result: SnapEntry[] = [];
 	for (const assetPath of assetPaths) {
-		const imagesDir = join(assetPath, "images");
-		const labelsDir = join(assetPath, "labels");
+		const imagesDir = join(exp(assetPath), "images");
+		const labelsDir = join(exp(assetPath), "labels");
 		let entries; try { entries = await readdir(imagesDir, { withFileTypes: true }); } catch { continue; }
 		for (const entry of entries) {
 			if (!entry.isFile() || !IMAGE_EXTS.has(extname(entry.name).toLowerCase())) continue;
@@ -304,8 +304,8 @@ const rpc = defineElectrobunRPC("bun", {
 					);
 					let newCount = 0, modifiedCount = 0;
 					for (const assetPath of (meta.assetPaths ?? [])) {
-						const imagesDir = join(assetPath, "images");
-						const labelsDir = join(assetPath, "labels");
+						const imagesDir = join(exp(assetPath), "images");
+						const labelsDir = join(exp(assetPath), "labels");
 						let entries; try { entries = await readdir(imagesDir, { withFileTypes: true }); } catch { continue; }
 						for (const entry of entries) {
 							if (!entry.isFile() || !IMAGE_EXTS.has(extname(entry.name).toLowerCase())) continue;
