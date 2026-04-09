@@ -148,6 +148,7 @@ def build_dataset(images: list[dict], class_map: list[str], output_dir: Path) ->
         "val":   "images/train",
         "nc":    len(class_map),
         "names": class_map,
+        "task":  "segment",
     }
     with open(data_yaml, "w") as f:
         yaml.dump(yaml_content, f, default_flow_style=False)
@@ -187,22 +188,22 @@ def make_on_train_epoch_end(total_epochs: int):
     def on_train_epoch_end(trainer):
         metrics = trainer.metrics or {}
 
-        # Individual epoch-averaged losses from tloss tensor [box, cls, dfl].
+        # Epoch-averaged losses from tloss tensor [box, seg, cls, dfl] for seg models.
         loss_box = loss_cls = loss_dfl = None
         try:
             tl = trainer.tloss
             if tl is not None and hasattr(tl, '__len__') and len(tl) >= 3:
                 loss_box = round(float(tl[0]), 6)
-                loss_cls = round(float(tl[1]), 6)
-                loss_dfl = round(float(tl[2]), 6)
+                loss_cls = round(float(tl[-2]), 6)
+                loss_dfl = round(float(tl[-1]), 6)
         except Exception:
             pass
 
-        # Validation precision & recall (available after each val pass).
+        # Validation precision & recall — seg models use (M) mask metrics.
         precision = recall = None
         try:
-            p = metrics.get("metrics/precision(B)")
-            r = metrics.get("metrics/recall(B)")
+            p = metrics.get("metrics/precision(M)")
+            r = metrics.get("metrics/recall(M)")
             if p is not None: precision = round(float(p), 4)
             if r is not None: recall    = round(float(r), 4)
         except Exception:
@@ -219,7 +220,7 @@ def make_on_train_epoch_end(total_epochs: int):
             "lossBox":     loss_box,
             "lossCls":     loss_cls,
             "lossDfl":     loss_dfl,
-            "mAP":         round(float(metrics.get("metrics/mAP50(B)", 0)), 4) if metrics else None,
+            "mAP":         round(float(metrics.get("metrics/mAP50(M)", 0)), 4) if metrics else None,
             "precision":   precision,
             "recall":      recall,
             "ramMB":       get_ram_mb(),
@@ -299,8 +300,8 @@ def main():
     # Extract final metrics.
     try:
         metrics      = results.results_dict
-        mAP50        = round(float(metrics.get("metrics/mAP50(B)",    0)), 4)
-        mAP50_95     = round(float(metrics.get("metrics/mAP50-95(B)", 0)), 4)
+        mAP50        = round(float(metrics.get("metrics/mAP50(M)",    0)), 4)
+        mAP50_95     = round(float(metrics.get("metrics/mAP50-95(M)", 0)), 4)
         weights_path = str(output_path / "weights" / "weights" / "best.pt")
     except Exception:
         mAP50 = mAP50_95 = 0.0
