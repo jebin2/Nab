@@ -67,6 +67,7 @@ type RPCSchema = {
           imgsz:      number;
           device:     string;
           outputPath: string;
+          fresh:      boolean;
         };
         response: { started: boolean };
       };
@@ -85,7 +86,7 @@ type RPCSchema = {
         };
       };
       stopTraining: {
-        params:   { runId: string };
+        params:   { runId: string; clearCheckpoint?: boolean; outputPath?: string };
         response: Record<string, never>;
       };
       exportModel: {

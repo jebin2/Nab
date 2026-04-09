@@ -311,6 +311,7 @@ export default function Annotate({ asset, onAssetUpdate, onBack }: Props) {
             classes:        classes.map(c => c.name),
             updatedAt:      "just now",
           });
+          onBack();
         }}
         backLabel="Assets"
         title={asset.name}

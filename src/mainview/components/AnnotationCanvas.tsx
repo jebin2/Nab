@@ -363,8 +363,8 @@ const AnnotationCanvas = forwardRef<CanvasHandle, Props>(function AnnotationCanv
   // ── mouse events ──────────────────────────────────────────────────────────
 
   useEffect(() => {
+    if (!canvasRef.current) return;
     const canvas = canvasRef.current;
-    if (!canvas) return;
 
     function getHandCursor(pos: { x: number; y: number }): string {
       const anns   = annotationsRef.current;
