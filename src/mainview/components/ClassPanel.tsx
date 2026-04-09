@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Plus, Trash2, Pencil } from "lucide-react";
 import { type BBox, type ClassDef } from "../lib/annotationTypes";
 import { CLASS_COLORS } from "../lib/constants";
 import { accentColorHover } from "../lib/styleUtils";
@@ -13,14 +13,16 @@ interface Props {
   onActiveClassChange: (index: number) => void;
   onSelectAnnotation: (id: string | null) => void;
   onDeleteAnnotation: (id: string) => void;
+  onEditAnnotation: (id: string, patch: Partial<Pick<BBox, "cx" | "cy" | "w" | "h">>) => void;
 }
 
 export default function ClassPanel({
   classes, activeClassIndex, annotations, selectedId,
-  onClassesChange, onActiveClassChange, onSelectAnnotation, onDeleteAnnotation,
+  onClassesChange, onActiveClassChange, onSelectAnnotation, onDeleteAnnotation, onEditAnnotation,
 }: Props) {
   const [addingClass, setAddingClass] = useState(false);
   const [newClassName, setNewClassName] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   function confirmAddClass() {
     const name = newClassName.trim().toUpperCase().replace(/\s+/g, "_");
@@ -176,52 +178,167 @@ export default function ClassPanel({
           {annotations.map(ann => {
             const cls = classes[ann.classIndex];
             const isSelected = ann.id === selectedId;
+            const isEditing  = ann.id === editingId;
             return (
-              <div
-                key={ann.id}
-                onClick={() => onSelectAnnotation(ann.id)}
-                style={{
-                  display: "flex", alignItems: "center", gap: 6,
-                  padding: "5px 8px", borderRadius: 5,
-                  background: isSelected ? "rgba(59,130,246,0.08)" : "transparent",
-                  border: isSelected ? "1px solid rgba(59,130,246,0.2)" : "1px solid transparent",
-                  cursor: "pointer", marginBottom: 2,
-                }}
-              >
-                <div style={{
-                  width: 7, height: 7, borderRadius: 2,
-                  border: `1.5px solid ${cls?.color ?? "#888"}`,
-                  flexShrink: 0,
-                }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 11, fontWeight: 500, color: "var(--text)" }}>
-                    {cls?.name ?? "unknown"}
-                  </div>
-                  <div style={{
-                    fontSize: 10, color: "var(--text-muted)",
-                    fontFamily: "monospace",
-                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                  }}>
-                    {ann.cx.toFixed(2)}, {ann.cy.toFixed(2)}, {ann.w.toFixed(2)}, {ann.h.toFixed(2)}
-                  </div>
-                </div>
-                <button
-                  onClick={e => { e.stopPropagation(); onDeleteAnnotation(ann.id); }}
+              <div key={ann.id} style={{ marginBottom: 2 }}>
+                {/* Row */}
+                <div
+                  onClick={() => onSelectAnnotation(ann.id)}
                   style={{
-                    background: "none", border: "none", cursor: "pointer",
-                    color: "var(--text-muted)", padding: 2, flexShrink: 0,
-                    display: "flex", alignItems: "center", opacity: 0.6,
+                    display: "flex", alignItems: "center", gap: 6,
+                    padding: "5px 8px", borderRadius: isEditing ? "5px 5px 0 0" : 5,
+                    background: isSelected ? "rgba(59,130,246,0.08)" : "transparent",
+                    border: isSelected ? "1px solid rgba(59,130,246,0.2)" : "1px solid transparent",
+                    borderBottom: isEditing ? "none" : undefined,
+                    cursor: "pointer",
                   }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.opacity = "1"; (e.currentTarget as HTMLButtonElement).style.color = "#EF4444"; }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.opacity = "0.6"; (e.currentTarget as HTMLButtonElement).style.color = "var(--text-muted)"; }}
                 >
-                  <Trash2 size={11} />
-                </button>
+                  <div style={{
+                    width: 7, height: 7, borderRadius: 2,
+                    border: `1.5px solid ${cls?.color ?? "#888"}`,
+                    flexShrink: 0,
+                  }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 11, fontWeight: 500, color: "var(--text)" }}>
+                      {cls?.name ?? "unknown"}
+                    </div>
+                    <div style={{
+                      fontSize: 10, color: "var(--text-muted)",
+                      fontFamily: "monospace",
+                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                    }}>
+                      {(ann.cx - ann.w / 2).toFixed(3)}, {(ann.cy - ann.h / 2).toFixed(3)}, {ann.w.toFixed(3)}, {ann.h.toFixed(3)}
+                    </div>
+                  </div>
+                  <button
+                    onClick={e => { e.stopPropagation(); setEditingId(isEditing ? null : ann.id); onSelectAnnotation(ann.id); }}
+                    title="Edit"
+                    style={{
+                      background: "none", border: "none", cursor: "pointer",
+                      color: isEditing ? "var(--accent)" : "var(--text-muted)",
+                      padding: 2, flexShrink: 0,
+                      display: "flex", alignItems: "center", opacity: isEditing ? 1 : 0.6,
+                    }}
+                    onMouseEnter={e => { if (!isEditing) { (e.currentTarget as HTMLButtonElement).style.opacity = "1"; (e.currentTarget as HTMLButtonElement).style.color = "var(--accent)"; } }}
+                    onMouseLeave={e => { if (!isEditing) { (e.currentTarget as HTMLButtonElement).style.opacity = "0.6"; (e.currentTarget as HTMLButtonElement).style.color = "var(--text-muted)"; } }}
+                  >
+                    <Pencil size={11} />
+                  </button>
+                  <button
+                    onClick={e => { e.stopPropagation(); onDeleteAnnotation(ann.id); }}
+                    title="Delete"
+                    style={{
+                      background: "none", border: "none", cursor: "pointer",
+                      color: "var(--text-muted)", padding: 2, flexShrink: 0,
+                      display: "flex", alignItems: "center", opacity: 0.6,
+                    }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.opacity = "1"; (e.currentTarget as HTMLButtonElement).style.color = "#EF4444"; }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.opacity = "0.6"; (e.currentTarget as HTMLButtonElement).style.color = "var(--text-muted)"; }}
+                  >
+                    <Trash2 size={11} />
+                  </button>
+                </div>
+
+                {/* Inline editor */}
+                {isEditing && (
+                  <BBoxEditor ann={ann} onEditAnnotation={onEditAnnotation} />
+                )}
               </div>
             );
           })}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── BBoxEditor ────────────────────────────────────────────────────────────────
+
+function BBoxEditor({
+  ann,
+  onEditAnnotation,
+}: {
+  ann: BBox;
+  onEditAnnotation: (id: string, patch: Partial<Pick<BBox, "cx" | "cy" | "w" | "h">>) => void;
+}) {
+  // Work in top-left corner space: x = cx - w/2, y = cy - h/2
+  const toXYWH = (a: BBox) => ({
+    x: (a.cx - a.w / 2).toFixed(3),
+    y: (a.cy - a.h / 2).toFixed(3),
+    w: a.w.toFixed(3),
+    h: a.h.toFixed(3),
+  });
+
+  const [drafts, setDrafts] = useState(() => toXYWH(ann));
+
+  // Sync when canvas moves/resizes the box externally
+  useEffect(() => {
+    setDrafts(toXYWH(ann));
+  }, [ann.cx, ann.cy, ann.w, ann.h]);
+
+  function handleChange(field: "x" | "y" | "w" | "h", raw: string) {
+    setDrafts(prev => ({ ...prev, [field]: raw }));
+    const num = parseFloat(raw);
+    if (isNaN(num)) return;
+
+    // Current top-left values
+    let x = ann.cx - ann.w / 2;
+    let y = ann.cy - ann.h / 2;
+    let w = ann.w;
+    let h = ann.h;
+
+    if (field === "x") x = Math.max(0, Math.min(1, num));
+    if (field === "y") y = Math.max(0, Math.min(1, num));
+    if (field === "w") w = Math.max(0, Math.min(1, num));
+    if (field === "h") h = Math.max(0, Math.min(1, num));
+
+    // Trim size so box stays within [0,1] from its top-left origin
+    w = Math.min(w, 1 - x);
+    h = Math.min(h, 1 - y);
+
+    const next = { cx: x + w / 2, cy: y + h / 2, w, h };
+
+    setDrafts({
+      x: x.toFixed(3),
+      y: y.toFixed(3),
+      w: w.toFixed(3),
+      h: h.toFixed(3),
+      [field]: raw,
+    });
+
+    onEditAnnotation(ann.id, next);
+  }
+
+  return (
+    <div style={{
+      padding: "8px 8px 10px",
+      background: "rgba(59,130,246,0.04)",
+      border: "1px solid rgba(59,130,246,0.2)",
+      borderTop: "none",
+      borderRadius: "0 0 5px 5px",
+      display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6,
+    }}>
+      {(["x", "y", "w", "h"] as const).map(field => (
+        <label key={field} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <span style={{ fontSize: 9, fontWeight: 700, color: "var(--text-muted)", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+            {field}
+          </span>
+          <input
+            type="number"
+            min={0} max={1} step={0.001}
+            value={drafts[field]}
+            onChange={e => handleChange(field, e.target.value)}
+            style={{
+              width: "100%", background: "var(--bg)",
+              border: "1px solid var(--border)", borderRadius: 4,
+              padding: "3px 5px", color: "var(--text)",
+              fontSize: 11, fontFamily: "monospace", outline: "none",
+            }}
+            onFocus={e => (e.currentTarget.style.borderColor = "var(--accent)")}
+            onBlur={e => (e.currentTarget.style.borderColor = "var(--border)")}
+          />
+        </label>
+      ))}
     </div>
   );
 }

@@ -449,6 +449,10 @@ export default function Annotate({ asset, onAssetUpdate, onBack }: Props) {
             updateAnnotations(currentImage.annotations.filter(a => a.id !== id));
             if (selectedId === id) setSelectedId(null);
           }}
+          onEditAnnotation={(id, patch) => {
+            if (!currentImage) return;
+            updateAnnotations(currentImage.annotations.map(a => a.id === id ? { ...a, ...patch } : a));
+          }}
         />
       </div>
 

@@ -343,6 +343,8 @@ const AnnotationCanvas = forwardRef<CanvasHandle, Props>(function AnnotationCanv
       if (e.code === "Space") { spaceDownRef.current = true; e.preventDefault(); }
       if (e.key === "Escape") { isDrawingRef.current = false; previewAnnRef.current = null; redraw(); }
       if (e.key === "Delete" || e.key === "Backspace") {
+        const tag = (document.activeElement as HTMLElement)?.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA") return;
         const selId = selectedIdRef.current;
         if (selId) {
           onAnnotationsChangeRef.current(annotationsRef.current.filter(a => a.id !== selId));
