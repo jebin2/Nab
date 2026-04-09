@@ -13,7 +13,7 @@ interface Props {
   onActiveClassChange: (index: number) => void;
   onSelectAnnotation: (id: string | null) => void;
   onDeleteAnnotation: (id: string) => void;
-  onEditAnnotation: (id: string, patch: Partial<Pick<BBox, "cx" | "cy" | "w" | "h">>) => void;
+  onEditAnnotation: (id: string, patch: Partial<Pick<BBox, "cx" | "cy" | "w" | "h" | "points">>) => void;
 }
 
 export default function ClassPanel({
@@ -172,7 +172,7 @@ export default function ClassPanel({
         <div style={{ flex: 1, overflowY: "auto", padding: "6px 8px" }}>
           {annotations.length === 0 && (
             <div style={{ fontSize: 12, color: "var(--text-muted)", padding: "8px 4px" }}>
-              Draw boxes on the image.
+              Draw boxes or polygons on the image.
             </div>
           )}
           {annotations.map(ann => {
@@ -207,7 +207,10 @@ export default function ClassPanel({
                       fontFamily: "monospace",
                       overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                     }}>
-                      {(ann.cx - ann.w / 2).toFixed(3)}, {(ann.cy - ann.h / 2).toFixed(3)}, {ann.w.toFixed(3)}, {ann.h.toFixed(3)}
+                      {ann.points && ann.points.length > 4
+                        ? `polygon · ${ann.points.length} pts`
+                        : `${(ann.cx - ann.w / 2).toFixed(3)}, ${(ann.cy - ann.h / 2).toFixed(3)}, ${ann.w.toFixed(3)}, ${ann.h.toFixed(3)}`
+                      }
                     </div>
                   </div>
                   <button
@@ -239,15 +242,100 @@ export default function ClassPanel({
                   </button>
                 </div>
 
-                {/* Inline editor */}
-                {isEditing && (
+                {isEditing && (!ann.points || ann.points.length === 4) && (
                   <BBoxEditor ann={ann} onEditAnnotation={onEditAnnotation} />
+                )}
+                {isEditing && ann.points && ann.points.length > 4 && (
+                  <PolygonEditor ann={ann} onEditAnnotation={onEditAnnotation} />
                 )}
               </div>
             );
           })}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── PolygonEditor ─────────────────────────────────────────────────────────────
+
+function PolygonEditor({
+  ann,
+  onEditAnnotation,
+}: {
+  ann: BBox;
+  onEditAnnotation: (id: string, patch: Partial<Pick<BBox, "cx" | "cy" | "w" | "h" | "points">>) => void;
+}) {
+  const pts = ann.points!;
+
+  // Draft strings per point, per axis
+  const [drafts, setDrafts] = useState<Array<{ x: string; y: string }>>(
+    () => pts.map(p => ({ x: p.x.toFixed(4), y: p.y.toFixed(4) }))
+  );
+
+  useEffect(() => {
+    setDrafts(pts.map(p => ({ x: p.x.toFixed(4), y: p.y.toFixed(4) })));
+  }, [ann.points]);
+
+  function handleChange(i: number, axis: "x" | "y", raw: string) {
+    const next = drafts.map((d, j) => j === i ? { ...d, [axis]: raw } : d);
+    setDrafts(next);
+    const num = parseFloat(raw);
+    if (isNaN(num)) return;
+    const newPts = pts.map((p, j) =>
+      j === i ? { ...p, [axis]: Math.max(0, Math.min(1, num)) } : p
+    );
+    const xs   = newPts.map(p => p.x);
+    const ys   = newPts.map(p => p.y);
+    const minX = Math.min(...xs), maxX = Math.max(...xs);
+    const minY = Math.min(...ys), maxY = Math.max(...ys);
+    onEditAnnotation(ann.id, {
+      points: newPts,
+      cx: (minX + maxX) / 2, cy: (minY + maxY) / 2,
+      w: maxX - minX, h: maxY - minY,
+    });
+  }
+
+  const inputStyle: React.CSSProperties = {
+    width: "100%", background: "var(--bg)",
+    border: "1px solid var(--border)", borderRadius: 4,
+    padding: "3px 5px", color: "var(--text)",
+    fontSize: 10, fontFamily: "monospace", outline: "none",
+  };
+
+  return (
+    <div style={{
+      padding: "6px 8px 8px",
+      background: "rgba(59,130,246,0.04)",
+      border: "1px solid rgba(59,130,246,0.2)",
+      borderTop: "none",
+      borderRadius: "0 0 5px 5px",
+      maxHeight: 180,
+      overflowY: "auto",
+    }}>
+      {drafts.map((d, i) => (
+        <div key={i} style={{ display: "grid", gridTemplateColumns: "24px 1fr 1fr", gap: 4, marginBottom: 4, alignItems: "center" }}>
+          <span style={{ fontSize: 9, fontWeight: 700, color: "var(--text-muted)", letterSpacing: "0.04em", fontFamily: "monospace" }}>
+            P{i + 1}
+          </span>
+          <input
+            type="number" min={0} max={1} step={0.0001}
+            value={d.x}
+            onChange={e => handleChange(i, "x", e.target.value)}
+            style={inputStyle}
+            onFocus={e => (e.currentTarget.style.borderColor = "var(--accent)")}
+            onBlur={e => (e.currentTarget.style.borderColor = "var(--border)")}
+          />
+          <input
+            type="number" min={0} max={1} step={0.0001}
+            value={d.y}
+            onChange={e => handleChange(i, "y", e.target.value)}
+            style={inputStyle}
+            onFocus={e => (e.currentTarget.style.borderColor = "var(--accent)")}
+            onBlur={e => (e.currentTarget.style.borderColor = "var(--border)")}
+          />
+        </div>
+      ))}
     </div>
   );
 }
@@ -259,7 +347,7 @@ function BBoxEditor({
   onEditAnnotation,
 }: {
   ann: BBox;
-  onEditAnnotation: (id: string, patch: Partial<Pick<BBox, "cx" | "cy" | "w" | "h">>) => void;
+  onEditAnnotation: (id: string, patch: Partial<Pick<BBox, "cx" | "cy" | "w" | "h" | "points">>) => void;
 }) {
   // Work in top-left corner space: x = cx - w/2, y = cy - h/2
   const toXYWH = (a: BBox) => ({

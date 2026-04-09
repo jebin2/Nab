@@ -170,13 +170,26 @@ const rpc = defineElectrobunRPC("bun", {
 				await mkdir(imagesDir, { recursive: true });
 				await mkdir(labelsDir, { recursive: true });
 				const imageFiles = (await readdir(imagesDir)).filter(f => IMAGE_EXTS.has(extname(f).toLowerCase()));
-				const labels: Record<string, Array<{ classIndex: number; cx: number; cy: number; w: number; h: number }>> = {};
+				const labels: Record<string, Array<{ classIndex: number; cx: number; cy: number; w: number; h: number; points?: Array<{ x: number; y: number }> }>> = {};
 				for (const filename of imageFiles) {
 					const labelPath = join(labelsDir, filename.replace(/\.[^.]+$/, ".txt"));
 					try {
 						const text = await Bun.file(labelPath).text();
 						labels[filename] = text.trim().split("\n").filter(Boolean).map(line => {
-							const [ci, cx, cy, w, h] = line.split(" ").map(Number);
+							const parts = line.split(" ").map(Number);
+							const classIndex = parts[0];
+							// YOLO segmentation: class x1 y1 x2 y2 ... (≥7 tokens, even count of coords)
+							if (parts.length >= 7 && (parts.length - 1) % 2 === 0) {
+								const points: Array<{ x: number; y: number }> = [];
+								for (let i = 1; i < parts.length; i += 2)
+									points.push({ x: parts[i], y: parts[i + 1] });
+								const xs = points.map(p => p.x);
+								const ys = points.map(p => p.y);
+								const minX = Math.min(...xs), maxX = Math.max(...xs);
+								const minY = Math.min(...ys), maxY = Math.max(...ys);
+								return { classIndex, cx: (minX + maxX) / 2, cy: (minY + maxY) / 2, w: maxX - minX, h: maxY - minY, points };
+							}
+							const [ci, cx, cy, w, h] = parts;
 							return { classIndex: ci, cx, cy, w, h };
 						});
 					} catch { labels[filename] = []; }
@@ -191,16 +204,23 @@ const rpc = defineElectrobunRPC("bun", {
 
 			saveAnnotations: async ({ storagePath, labels, classes }: {
 				storagePath: string;
-				labels: Record<string, Array<{ classIndex: number; cx: number; cy: number; w: number; h: number }>>;
+				labels: Record<string, Array<{ classIndex: number; cx: number; cy: number; w: number; h: number; points?: Array<{ x: number; y: number }> }>>;
 				classes: string[];
 			}) => {
 				const labelsDir = join(exp(storagePath), "labels");
 				await mkdir(labelsDir, { recursive: true });
 				for (const [filename, anns] of Object.entries(labels)) {
 					const labelPath = join(labelsDir, filename.replace(/\.[^.]+$/, ".txt"));
-					const content   = anns.map(a =>
-						`${a.classIndex} ${a.cx.toFixed(6)} ${a.cy.toFixed(6)} ${a.w.toFixed(6)} ${a.h.toFixed(6)}`
-					).join("\n");
+					const content   = anns.map(a => {
+						let pts = a.points;
+						if (!pts || pts.length < 3) {
+							// Convert bbox to 4-corner polygon (TL, TR, BR, BL)
+							const l = a.cx - a.w / 2, r = a.cx + a.w / 2;
+							const t = a.cy - a.h / 2, b = a.cy + a.h / 2;
+							pts = [{ x: l, y: t }, { x: r, y: t }, { x: r, y: b }, { x: l, y: b }];
+						}
+						return `${a.classIndex} ${pts.map(p => `${p.x.toFixed(6)} ${p.y.toFixed(6)}`).join(" ")}`;
+					}).join("\n");
 					await Bun.write(labelPath, content);
 				}
 				await Bun.write(join(exp(storagePath), "classes.txt"), classes.join("\n"));

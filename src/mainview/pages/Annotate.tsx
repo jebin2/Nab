@@ -119,6 +119,7 @@ export default function Annotate({ asset, onAssetUpdate, onBack }: Props) {
           cy:         a.cy,
           w:          a.w,
           h:          a.h,
+          points:     a.points,
         })),
       }));
       setImages(entries);
@@ -136,9 +137,9 @@ export default function Annotate({ asset, onAssetUpdate, onBack }: Props) {
   }, [asset.id]);
 
   function saveNow(imgs: ImageEntry[], cls: ClassDef[]) {
-    const labels: Record<string, Array<{ classIndex: number; cx: number; cy: number; w: number; h: number }>> = {};
+    const labels: Record<string, Array<{ classIndex: number; cx: number; cy: number; w: number; h: number; points?: Array<{ x: number; y: number }> }>> = {};
     for (const img of imgs) {
-      labels[img.filename] = img.annotations.map(({ classIndex, cx, cy, w, h }) => ({ classIndex, cx, cy, w, h }));
+      labels[img.filename] = img.annotations.map(({ classIndex, cx, cy, w, h, points }) => ({ classIndex, cx, cy, w, h, points }));
     }
     getRPC().request.saveAnnotations({
       storagePath: asset.storagePath,
@@ -452,7 +453,17 @@ export default function Annotate({ asset, onAssetUpdate, onBack }: Props) {
           }}
           onEditAnnotation={(id, patch) => {
             if (!currentImage) return;
-            updateAnnotations(currentImage.annotations.map(a => a.id === id ? { ...a, ...patch } : a));
+            updateAnnotations(currentImage.annotations.map(a => {
+              if (a.id !== id) return a;
+              const updated = { ...a, ...patch };
+              // Keep 4-corner points in sync when bbox is edited manually
+              if (updated.points?.length === 4) {
+                const l = updated.cx - updated.w / 2, r = updated.cx + updated.w / 2;
+                const t = updated.cy - updated.h / 2, b = updated.cy + updated.h / 2;
+                updated.points = [{ x: l, y: t }, { x: r, y: t }, { x: r, y: b }, { x: l, y: b }];
+              }
+              return updated;
+            }));
           }}
         />
       </div>

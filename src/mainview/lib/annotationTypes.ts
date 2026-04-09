@@ -21,11 +21,13 @@ export function clampBBox(
 export interface BBox {
   id: string;
   classIndex: number;
-  // YOLO normalized: cx, cy, w, h (0–1)
+  // YOLO normalized: cx, cy, w, h (0–1). For polygons these are derived from the bounding rect of points.
   cx: number;
   cy: number;
   w: number;
   h: number;
+  // When present, this is a segmentation polygon; normalized [0,1] image coordinates.
+  points?: Array<{ x: number; y: number }>;
 }
 
 export interface ClassDef {

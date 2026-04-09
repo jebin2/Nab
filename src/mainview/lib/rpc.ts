@@ -36,14 +36,14 @@ type RPCSchema = {
         params:   { storagePath: string };
         response: {
           images:  Array<{ filename: string; filePath: string }>;
-          labels:  Record<string, Array<{ classIndex: number; cx: number; cy: number; w: number; h: number }>>;
+          labels:  Record<string, Array<{ classIndex: number; cx: number; cy: number; w: number; h: number; points?: Array<{ x: number; y: number }> }>>;
           classes: string[];
         };
       };
       saveAnnotations: {
         params: {
           storagePath: string;
-          labels:  Record<string, Array<{ classIndex: number; cx: number; cy: number; w: number; h: number }>>;
+          labels:  Record<string, Array<{ classIndex: number; cx: number; cy: number; w: number; h: number; points?: Array<{ x: number; y: number }> }>>;
           classes: string[];
         };
         response: Record<string, never>;
