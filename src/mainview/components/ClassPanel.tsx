@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Plus, Trash2, Pencil } from "lucide-react";
-import { type BBox, type ClassDef } from "../lib/annotationTypes";
+import { type BBox, type ClassDef, clampBBox } from "../lib/annotationTypes";
 import { CLASS_COLORS } from "../lib/constants";
 import { accentColorHover } from "../lib/styleUtils";
 
@@ -292,11 +292,7 @@ function BBoxEditor({
     if (field === "w") w = Math.max(0, Math.min(1, num));
     if (field === "h") h = Math.max(0, Math.min(1, num));
 
-    // Trim size so box stays within [0,1] from its top-left origin
-    w = Math.min(w, 1 - x);
-    h = Math.min(h, 1 - y);
-
-    const next = { cx: x + w / 2, cy: y + h / 2, w, h };
+    const next = clampBBox(x + w / 2, y + h / 2, w, h);
 
     setDrafts({
       x: x.toFixed(3),

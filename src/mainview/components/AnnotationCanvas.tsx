@@ -1,5 +1,5 @@
 import { useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from "react";
-import { type BBox, type ClassDef, type AnnotateTool } from "../lib/annotationTypes";
+import { type BBox, type ClassDef, type AnnotateTool, clampBBox } from "../lib/annotationTypes";
 
 interface Props {
   tool: AnnotateTool;
@@ -32,9 +32,6 @@ const ZOOM_BTN       = 1.25;
 
 // ── pure utilities (no component state) ──────────────────────────────────────
 
-function clamp01(v: number) {
-  return Math.max(0, Math.min(1, v));
-}
 
 function drawBox(
   ctx: CanvasRenderingContext2D,
@@ -468,14 +465,7 @@ const AnnotationCanvas = forwardRef<CanvasHandle, Props>(function AnnotationCanv
         const { w: iw, h: ih } = imgSizeRef.current;
         const newCx = orig.cx + (currImg.x - startImg.x) / iw;
         const newCy = orig.cy + (currImg.y - startImg.y) / ih;
-        // clamp so the whole box stays within [0,1]
-        const halfW = orig.w / 2;
-        const halfH = orig.h / 2;
-        previewAnnRef.current = {
-          ...orig,
-          cx: Math.max(halfW, Math.min(1 - halfW, newCx)),
-          cy: Math.max(halfH, Math.min(1 - halfH, newCy)),
-        };
+        previewAnnRef.current = { ...orig, ...clampBBox(newCx, newCy, orig.w, orig.h) };
         redraw();
         return;
       }
@@ -491,10 +481,10 @@ const AnnotationCanvas = forwardRef<CanvasHandle, Props>(function AnnotationCanv
         let t = (orig.cy - orig.h / 2) * ih;
         let b = (orig.cy + orig.h / 2) * ih;
 
-        if (c === 0) { l = Math.max(0, imgCurr.x); t = Math.max(0, imgCurr.y); }
-        if (c === 1) { r = Math.min(iw, imgCurr.x); t = Math.max(0, imgCurr.y); }
-        if (c === 2) { l = Math.max(0, imgCurr.x); b = Math.min(ih, imgCurr.y); }
-        if (c === 3) { r = Math.min(iw, imgCurr.x); b = Math.min(ih, imgCurr.y); }
+        if (c === 0) { l = imgCurr.x; t = imgCurr.y; }
+        if (c === 1) { r = imgCurr.x; t = imgCurr.y; }
+        if (c === 2) { l = imgCurr.x; b = imgCurr.y; }
+        if (c === 3) { r = imgCurr.x; b = imgCurr.y; }
 
         // enforce minimum size
         if (r - l < MIN_BOX_PX) { if (c === 0 || c === 2) l = r - MIN_BOX_PX; else r = l + MIN_BOX_PX; }
@@ -502,10 +492,7 @@ const AnnotationCanvas = forwardRef<CanvasHandle, Props>(function AnnotationCanv
 
         previewAnnRef.current = {
           ...orig,
-          cx: clamp01((l + r) / 2 / iw),
-          cy: clamp01((t + b) / 2 / ih),
-          w:  clamp01((r - l) / iw),
-          h:  clamp01((b - t) / ih),
+          ...clampBBox((l + r) / 2 / iw, (t + b) / 2 / ih, (r - l) / iw, (b - t) / ih),
         };
         redraw();
         return;
@@ -556,8 +543,7 @@ const AnnotationCanvas = forwardRef<CanvasHandle, Props>(function AnnotationCanv
           const newAnn: BBox = {
             id: crypto.randomUUID(),
             classIndex: activeClassIndexRef.current,
-            cx: clamp01(yolo.cx), cy: clamp01(yolo.cy),
-            w:  clamp01(yolo.w),  h:  clamp01(yolo.h),
+            ...clampBBox(yolo.cx, yolo.cy, yolo.w, yolo.h),
           };
           onAnnotationsChangeRef.current([...annotationsRef.current, newAnn]);
           onSelectRef.current(newAnn.id);
