@@ -6,6 +6,7 @@ import { RUN_STATUS_LABELS, RUN_STATUS_COLORS, DEVICES, CLASS_COLORS } from "../
 import { getRPC } from "../lib/rpc";
 import { parseLog, type LogProgress } from "../lib/trainLog";
 import { panel, sectionLabel, statusBadge, dropdownItemHover } from "../lib/styleUtils";
+import LogPanel from "./LogPanel";
 
 // ── Config strip helpers ───────────────────────────────────────────────────────
 
@@ -452,12 +453,12 @@ export default function RunDetailView({ run, progress, onClose, onUpdate, onStar
               <Terminal size={12} style={{ color: "var(--text-muted)" }} />
               <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-muted)" }}>Training Logs — {run.name}</span>
             </div>
-            <div style={{ flex: 1, overflowY: "auto", padding: "12px 16px", fontFamily: "monospace", fontSize: 11, lineHeight: 1.6 }}>
-              {lines.length === 0
-                ? <div style={{ color: "var(--text-muted)", paddingTop: 16 }}>No log entries yet.</div>
-                : lines.map((line, i) => <LogLine key={i} line={line} />)
-              }
-              <div ref={logEndRef} />
+            <div style={{ flex: 1, minHeight: 0 }}>
+              <LogPanel
+                lines={lines}
+                renderLine={(line, i) => <LogLine key={i} line={line} />}
+                endRef={logEndRef}
+              />
             </div>
           </div>
         </div>

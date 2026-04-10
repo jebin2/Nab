@@ -18,6 +18,8 @@ export const TRAIN_SCRIPT      = join(import.meta.dir, "../python/train.py");
 export const INFER_SCRIPT      = join(import.meta.dir, "../python/infer.py");
 export const EXPORT_SCRIPT     = join(import.meta.dir, "../python/export.py");
 export const YOLO_UTILS_SCRIPT = join(import.meta.dir, "../python/yolo_utils.py");
+export const PUSH_SCRIPT       = join(import.meta.dir, "../python/push_to_hub.py");
+export const HUB_LOGS_DIR      = join(YOLO_DIR, "hub-logs");
 export const RUNTIME_TARBALL   = join(YOLO_DIR, "python-runtime.tar.gz");
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -50,6 +52,37 @@ export function cleanLine(raw: string): string {
 	return segments[segments.length - 1].replace(/\x1b\[[0-9;]*[A-Za-z]/g, "").trim();
 }
 
+export function coalescePipProgress(log: LineHandler): LineHandler {
+	let lastTotal = 0;
+	let lastBucket = -1;
+
+	return async (line: string) => {
+		const match = line.match(/^Progress\s+(\d+)\s+of\s+(\d+)/i);
+		if (!match) {
+			await log(line);
+			return;
+		}
+
+		const done = Number(match[1]);
+		const total = Number(match[2]);
+		if (!Number.isFinite(done) || !Number.isFinite(total) || total <= 0) return;
+
+		if (total !== lastTotal) {
+			lastTotal = total;
+			lastBucket = -1;
+		}
+
+		const pct = Math.min(100, Math.floor((done / total) * 100));
+		const bucket = pct === 100 ? 100 : Math.floor(pct / 5) * 5;
+		if (bucket <= lastBucket && pct !== 100) return;
+		lastBucket = bucket;
+
+		const doneMB = (done / (1024 * 1024)).toFixed(1);
+		const totalMB = (total / (1024 * 1024)).toFixed(1);
+		await log(`Download progress ${pct}% (${doneMB}/${totalMB} MB)`);
+	};
+}
+
 async function streamPipe(
 	pipe: AsyncIterable<Uint8Array>,
 	onLine?: LineHandler,
@@ -63,7 +96,7 @@ async function streamPipe(
 		if (collect) text += decoded;
 		if (!onLine) continue;
 		buf += decoded;
-		const lines = buf.split("\n");
+		const lines = buf.split(/\r\n|\n|\r/);
 		buf = lines.pop() ?? "";
 		for (const line of lines) {
 			const clean = cleanLine(line);
@@ -153,7 +186,7 @@ export async function downloadPythonRuntime(
 	const suffix = PYTHON_PLATFORM_MAP[platformKey];
 	if (!suffix) throw new Error(`Unsupported platform for Python download: ${platformKey}`);
 
-	await log(`[setup] Fetching Python runtime info for ${platformKey}…`);
+	await log(`[setup] Fetching Python runtime info for ${platformKey}...`);
 	const apiRes = await fetch(
 		"https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest",
 		{ headers: { "User-Agent": "Reticle" } },
@@ -166,7 +199,7 @@ export async function downloadPythonRuntime(
 	const asset = release.assets.find(a => a.name.startsWith("cpython-3.12") && a.name.endsWith(suffix));
 	if (!asset) throw new Error(`No Python 3.12 asset found for ${platformKey}`);
 
-	await log(`[setup] Downloading Python runtime: ${asset.name}…`);
+	await log(`[setup] Downloading Python runtime: ${asset.name}...`);
 	const dlRes = await fetch(asset.browser_download_url);
 	if (!dlRes.ok || !dlRes.body) throw new Error(`Download failed: ${dlRes.status}`);
 
@@ -185,6 +218,31 @@ export async function downloadPythonRuntime(
 	await log("[setup] Python runtime downloaded.");
 }
 
+// ── PTY wrapper ───────────────────────────────────────────────────────────────
+// Runs a command inside a pseudo-terminal so tools like pip can stream progress.
+// Output still goes through runProcess/cleanLine before reaching the UI.
+
+export async function runWithPTY(
+	cmd: string[],
+	options: RunProcessOptions = {},
+): Promise<{ exitCode: number }> {
+	if (process.platform !== "linux" && process.platform !== "darwin") {
+		const { exitCode } = await runProcess(cmd, options);
+		return { exitCode };
+	}
+
+	let ptyCmd: string[];
+	if (process.platform === "linux") {
+		const shellQuote = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
+		ptyCmd = ["script", "-q", "-e", "-c", cmd.map(shellQuote).join(" "), "/dev/null"];
+	} else {
+		ptyCmd = ["script", "-q", "/dev/null", ...cmd];
+	}
+
+	const { exitCode } = await runProcess(ptyCmd, options);
+	return { exitCode };
+}
+
 // ── prepareEnvironment ────────────────────────────────────────────────────────
 // Ensures the cached Python runtime + ultralytics venv are ready.
 // Returns VENV_PYTHON so the caller can spawn Python directly.
@@ -199,17 +257,35 @@ export async function prepareEnvironment(
 		await stderrHandler?.(text);
 	};
 
+	const runOpts = {
+		stdoutHandler: log,
+		stderrHandler: log,
+		collectStdout: false,
+		collectStderr: false,
+		env: { ...process.env, PYTHONUNBUFFERED: "1" },
+		runId,
+	};
+
 	async function run(cmd: string[], label: string): Promise<void> {
-		const { exitCode } = await runProcess(cmd, {
-			stdoutHandler: log,
-			stderrHandler: log,
-			collectStdout: false,
-			collectStderr: false,
-			env: { ...process.env, PYTHONUNBUFFERED: "1" },
-			runId,
+		const { exitCode } = await runProcess(cmd, runOpts);
+		if (exitCode !== 0) {
+			await log(`[setup] error: ${label} failed (exit ${exitCode})`);
+			throw new Error(`${label} failed with exit code ${exitCode}`);
+		}
+	}
+
+	// Keep pip progress textual so the UI shows download movement without
+	// rich/PTY cursor controls corrupting the log view.
+	async function runPip(packages: string[], label: string): Promise<void> {
+		const pipLog = coalescePipProgress(log);
+		const cmd = [VENV_PYTHON, "-m", "pip", "install", "--progress-bar", "raw", ...packages];
+		const { exitCode } = await runWithPTY(cmd, {
+			...runOpts,
+			stdoutHandler: pipLog,
+			stderrHandler: pipLog,
 		});
 		if (exitCode !== 0) {
-			await log(`[setup] ✗ ${label} failed (exit ${exitCode})`);
+			await log(`[setup] error: ${label} failed (exit ${exitCode})`);
 			throw new Error(`${label} failed with exit code ${exitCode}`);
 		}
 	}
@@ -217,18 +293,18 @@ export async function prepareEnvironment(
 	if (!(await Bun.file(RUNTIME_PYTHON).exists())) {
 		if (!(await Bun.file(RUNTIME_TARBALL).exists()))
 			await downloadPythonRuntime(RUNTIME_TARBALL, log);
-		await log("[setup] Extracting Python runtime…");
+		await log("[setup] Extracting Python runtime...");
 		await mkdir(RUNTIME_DIR, { recursive: true });
 		await run(["tar", "xzf", RUNTIME_TARBALL, "-C", RUNTIME_DIR], "tar extract");
 		await log("[setup] Python runtime ready.");
 	}
 
 	if (!(await Bun.file(VENV_READY_MARKER).exists())) {
-		await log("[setup] Creating virtual environment at ~/.reticle/venv…");
+		await log("[setup] Creating virtual environment at ~/.reticle/venv...");
 		await run([RUNTIME_PYTHON, "-m", "venv", "--clear", VENV_DIR], "venv create");
 		await log("[setup] Virtual environment created.");
-		await log("[setup] Installing ultralytics (first run only — may take a few minutes)…");
-		await run([VENV_PYTHON, "-m", "pip", "install", "ultralytics"], "pip install");
+		await log("[setup] Installing ultralytics (first run only - may take a few minutes)...");
+		await runPip(["ultralytics"], "pip install ultralytics");
 		await Bun.write(VENV_READY_MARKER, "ready");
 		await log("[setup] Environment ready.");
 	}

@@ -284,7 +284,7 @@ def main():
             os.environ.get("RETICLE_CPU_FALLBACK") != "1" and
             is_cuda_unavailable_error(e)
         ):
-            emit({"type": "stderr", "text": "[train] CUDA unavailable for auto device; retrying on CPU…"})
+            emit({"type": "stderr", "text": "[train] CUDA unavailable for auto device; retrying on CPU..."})
             try:
                 if resuming:
                     emit({"type": "stderr", "text": "[train] CPU fallback disables checkpoint resume and restarts from base model."})

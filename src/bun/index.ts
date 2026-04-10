@@ -5,12 +5,21 @@ import { randomBytes } from "crypto";
 import { homedir, tmpdir } from "os";
 import {
 	YOLO_DIR, TRAIN_SCRIPT, INFER_SCRIPT, EXPORT_SCRIPT,
-	YOLO_UTILS_SCRIPT,
+	YOLO_UTILS_SCRIPT, PUSH_SCRIPT, HUB_LOGS_DIR,
 	VENV_PYTHON, runningProcesses,
-	prepareEnvironment, runInference, runProcess, streamProcessOutput, checkpointPath,
+	prepareEnvironment, runInference, runProcess, runWithPTY, streamProcessOutput, checkpointPath,
+	coalescePipProgress,
 } from "./util";
 
 const IMAGE_EXTS = new Set([".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".tiff", ".tif"]);
+
+/** Read a newline-delimited log file and return non-empty lines. */
+async function readLogFile(logPath: string): Promise<string[]> {
+	try {
+		const content = await Bun.file(logPath).text();
+		return content.split("\n").filter(l => l.trim());
+	} catch { return []; }
+}
 
 /** Expand a leading ~ to the real home directory. */
 const exp = (p: string) => p.replace(/^~/, homedir());
@@ -290,7 +299,7 @@ const rpc = defineElectrobunRPC("bun", {
 				await appendFile(logPath, JSON.stringify({ type: "start", timestamp: new Date().toISOString(), config }) + "\n");
 
 				const venvPython = await prepareEnvironment(logPath, config.id);
-				await appendFile(logPath, JSON.stringify({ type: "stderr", text: "[setup] Starting training…" }) + "\n");
+				await appendFile(logPath, JSON.stringify({ type: "stderr", text: "[setup] Starting training..." }) + "\n");
 
 				const proc = Bun.spawn([venvPython, TRAIN_SCRIPT], { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
 				runningProcesses.set(config.id, proc);
@@ -308,11 +317,7 @@ const rpc = defineElectrobunRPC("bun", {
 			},
 
 			readTrainingLog: async ({ outputPath }: { outputPath: string }) => {
-				const logPath = join(exp(outputPath), "train.log");
-				try {
-					const content = await Bun.file(logPath).text();
-					return { lines: content.split("\n").filter(l => l.trim()) };
-				} catch { return { lines: [] }; }
+				return { lines: await readLogFile(join(exp(outputPath), "train.log")) };
 			},
 
 			readRunMeta: async ({ outputPath }: { outputPath: string }) => {
@@ -552,6 +557,48 @@ const rpc = defineElectrobunRPC("bun", {
 				}
 				return {};
 			},
+
+			startHubPush: async ({ modelPath, repoId, token }: {
+				modelPath: string; repoId: string; token: string;
+			}) => {
+				const jobId   = crypto.randomUUID();
+				const logPath = join(HUB_LOGS_DIR, `${jobId}.log`);
+				await mkdir(HUB_LOGS_DIR, { recursive: true });
+
+				// Fire-and-forget: env setup, pip install, then push.
+				(async () => {
+					const log = (line: string) => appendFile(logPath, line + "\n").catch(console.error);
+					try {
+						await prepareEnvironment(logPath, jobId);
+					} catch (err) {
+						await log(JSON.stringify({ type: "error", message: `Environment setup failed: ${(err as Error).message}` }));
+						return;
+					}
+					await log(JSON.stringify({ type: "progress", text: "Checking huggingface_hub package..." }));
+					const pipLogger = coalescePipProgress(async (text: string) => log(JSON.stringify({ type: "stderr", text })));
+					const { exitCode: pipExit } = await runWithPTY(
+						[VENV_PYTHON, "-m", "pip", "install", "--progress-bar", "raw", "huggingface_hub"],
+						{ stdoutHandler: pipLogger, stderrHandler: pipLogger },
+					);
+					if (pipExit !== 0) {
+						await log(JSON.stringify({ type: "error", message: "Failed to install huggingface_hub package." }));
+						return;
+					}
+					const proc = Bun.spawn([VENV_PYTHON, PUSH_SCRIPT], { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
+					proc.stdin.write(JSON.stringify({ modelPath: exp(modelPath), repoId, token }));
+					proc.stdin.end();
+					await streamProcessOutput(proc, {
+						stdoutHandler: line => log(line),
+						stderrHandler: text => log(JSON.stringify({ type: "stderr", text })),
+					});
+				})();
+
+				return { jobId };
+			},
+
+			readHubLog: async ({ jobId }: { jobId: string }) => {
+				return { lines: await readLogFile(join(HUB_LOGS_DIR, `${jobId}.log`)) };
+			},
 		},
 	},
 });
@@ -566,7 +613,7 @@ const mainWindow = new BrowserWindow({
 	rpc,
 });
 
-console.log(`Reticle started — bridge on port ${server.port}`);
+console.log(`Reticle started - bridge on port ${server.port}`);
 
 // ── Graceful shutdown ─────────────────────────────────────────────────────────
 // Kill every child process we spawned before the app exits.

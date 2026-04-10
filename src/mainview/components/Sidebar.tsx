@@ -1,4 +1,4 @@
-import { LayoutDashboard, Layers, Cpu, Scan, Upload } from "lucide-react";
+import { LayoutDashboard, Layers, Cpu, Scan, Upload, Cloud } from "lucide-react";
 import { type NavPage } from "../lib/types";
 
 interface Props {
@@ -12,6 +12,7 @@ const NAV_ITEMS: { id: NavPage; label: string; Icon: React.ElementType }[] = [
   { id: "train",      label: "Train",      Icon: Cpu },
   { id: "inference",  label: "Inference",  Icon: Scan },
   { id: "export",     label: "Export",     Icon: Upload },
+  { id: "hub",        label: "Hub",        Icon: Cloud },
 ];
 
 

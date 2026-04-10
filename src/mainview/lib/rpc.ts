@@ -132,6 +132,14 @@ type RPCSchema = {
           error: string | null;
         };
       };
+      startHubPush: {
+        params:   { modelPath: string; repoId: string; token: string };
+        response: { jobId: string };
+      };
+      readHubLog: {
+        params:   { jobId: string };
+        response: { lines: string[] };
+      };
     };
     messages: {};
     push: {};

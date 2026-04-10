@@ -8,6 +8,7 @@ import Annotate  from "./pages/Annotate";
 import Train     from "./pages/Train";
 import Inference from "./pages/Inference";
 import Export    from "./pages/Export";
+import PushHub   from "./pages/PushHub";
 
 export default function App() {
   const [activePage, setActivePage]   = useState<NavPage>("overview");
@@ -78,6 +79,7 @@ export default function App() {
         {activePage === "train"     && <Train assets={assets} runs={runs} onRunsChange={setRuns} />}
         {activePage === "inference" && <Inference runs={runs} />}
         {activePage === "export"    && <Export runs={runs} />}
+        {activePage === "hub"       && <PushHub runs={runs} />}
       </main>
     </div>
   );

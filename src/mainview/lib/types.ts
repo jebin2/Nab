@@ -1,7 +1,7 @@
 // App-level domain types shared across pages and components.
 // Canvas/annotation-specific types live in annotationTypes.ts.
 
-export type NavPage = "overview" | "assets" | "train" | "inference" | "export";
+export type NavPage = "overview" | "assets" | "train" | "inference" | "export" | "hub";
 
 export interface Asset {
   id: string;
