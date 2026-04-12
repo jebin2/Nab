@@ -93,6 +93,44 @@ async function scanAnnotatedImages(assetPaths: string[]): Promise<SnapEntry[]> {
 	return result;
 }
 
+/**
+ * Scan an asset's label files and return whether any annotation is a true
+ * polygon (not just a bbox converted to an axis-aligned 4-corner rectangle).
+ * Used as a one-time migration for assets that predate the hasPolygons field.
+ */
+async function detectHasPolygons(storagePath: string): Promise<boolean> {
+	const labelsDir = join(storagePath, "labels");
+	let files: string[];
+	try { files = await readdir(labelsDir); } catch { return false; }
+	const EPS = 1e-5;
+	for (const f of files) {
+		if (!f.endsWith(".txt")) continue;
+		let text: string;
+		try { text = await Bun.file(join(labelsDir, f)).text(); } catch { continue; }
+		for (const line of text.trim().split("\n")) {
+			const parts = line.trim().split(" ").map(Number);
+			if (parts.length < 7 || (parts.length - 1) % 2 !== 0) continue;
+			const pts: Array<{ x: number; y: number }> = [];
+			for (let i = 1; i < parts.length; i += 2) pts.push({ x: parts[i], y: parts[i + 1] });
+			if (pts.length === 4) {
+				const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+				const minX = Math.min(...xs), maxX = Math.max(...xs);
+				const minY = Math.min(...ys), maxY = Math.max(...ys);
+				const isRect =
+					Math.abs(pts[0].x - minX) < EPS && Math.abs(pts[0].y - minY) < EPS &&
+					Math.abs(pts[1].x - maxX) < EPS && Math.abs(pts[1].y - minY) < EPS &&
+					Math.abs(pts[2].x - maxX) < EPS && Math.abs(pts[2].y - maxY) < EPS &&
+					Math.abs(pts[3].x - minX) < EPS && Math.abs(pts[3].y - maxY) < EPS;
+				if (!isRect) return true;
+			} else {
+				// >4 points — definitely a true polygon
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
 async function pruneSnapshot(images: SnapEntry[]): Promise<SnapEntry[]> {
 	const kept: SnapEntry[] = [];
 	for (const e of images) {
@@ -147,6 +185,19 @@ const rpc = defineElectrobunRPC("bun", {
 								r.status === "training" || r.status === "installing"
 									? { ...r, status: "paused" } : r
 							);
+						}
+						// One-time migration: compute hasPolygons for assets that predate the field.
+						let migrated = false;
+						if (Array.isArray(data.assets)) {
+							for (const asset of data.assets) {
+								if (asset.hasPolygons === undefined && asset.storagePath) {
+									asset.hasPolygons = await detectHasPolygons(exp(asset.storagePath));
+									migrated = true;
+								}
+							}
+						}
+						if (migrated) {
+							await Bun.write(studioFile, JSON.stringify(data, null, 2));
 						}
 						return data;
 					}
