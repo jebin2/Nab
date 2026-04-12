@@ -33,6 +33,7 @@ def main():
     model_path = config["modelPath"]
     repo_id    = config["repoId"]
     token      = config["token"]
+    file_name  = config.get("fileName", "model.pt")
 
     if not Path(model_path).exists():
         emit({"type": "error", "message": f"Model file not found: {model_path}"})
@@ -62,11 +63,11 @@ def main():
         sys.exit(1)
 
     size_mb = Path(model_path).stat().st_size / (1024 * 1024)
-    emit({"type": "progress", "text": f"Uploading model ({size_mb:.1f} MB)..."})
+    emit({"type": "progress", "text": f"Uploading {file_name} ({size_mb:.1f} MB)..."})
     try:
         api.upload_file(
             path_or_fileobj=model_path,
-            path_in_repo="model.pt",
+            path_in_repo=file_name,
             repo_id=repo_id,
             repo_type="model",
         )

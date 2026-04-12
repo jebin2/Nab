@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import type { ReactNode, RefObject } from "react";
 
 interface Props {
@@ -15,6 +16,12 @@ export default function LogPanel({
   height = "100%",
   endRef,
 }: Props) {
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [lines]);
+
   return (
     <div
       style={{
@@ -33,6 +40,7 @@ export default function LogPanel({
         ? <div style={{ color: "var(--text-muted)", paddingTop: 16 }}>{emptyText}</div>
         : lines.map(renderLine)
       }
+      <div ref={bottomRef} />
       {endRef && <div ref={endRef} />}
     </div>
   );

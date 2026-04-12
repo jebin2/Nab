@@ -558,8 +558,8 @@ const rpc = defineElectrobunRPC("bun", {
 				return {};
 			},
 
-			startHubPush: async ({ modelPath, repoId, token }: {
-				modelPath: string; repoId: string; token: string;
+			startHubPush: async ({ modelPath, repoId, token, runName }: {
+				modelPath: string; repoId: string; token: string; runName: string;
 			}) => {
 				const jobId   = crypto.randomUUID();
 				const logPath = join(HUB_LOGS_DIR, `${jobId}.log`);
@@ -585,7 +585,8 @@ const rpc = defineElectrobunRPC("bun", {
 						return;
 					}
 					const proc = Bun.spawn([VENV_PYTHON, PUSH_SCRIPT], { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
-					proc.stdin.write(JSON.stringify({ modelPath: exp(modelPath), repoId, token }));
+					const safeName = runName.replace(/[^a-zA-Z0-9_-]/g, "_");
+					proc.stdin.write(JSON.stringify({ modelPath: exp(modelPath), repoId, token, fileName: `${safeName}.pt` }));
 					proc.stdin.end();
 					await streamProcessOutput(proc, {
 						stdoutHandler: line => log(line),

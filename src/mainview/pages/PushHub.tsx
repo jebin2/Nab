@@ -65,7 +65,7 @@ export default function PushHub({ runs }: Props) {
     jobIdRef.current = null;
 
     try {
-      const res = await getRPC().request.startHubPush({ modelPath, repoId: repoId.trim(), token: token.trim() });
+      const res = await getRPC().request.startHubPush({ modelPath, repoId: repoId.trim(), token: token.trim(), runName: run.name });
       jobIdRef.current = res.jobId;
     } catch (err) {
       setPhase("error");
