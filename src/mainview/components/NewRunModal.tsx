@@ -23,7 +23,7 @@ export default function NewRunModal({ assets, runs, onClose, onCreate }: Props) 
   const [name, setName]             = useState("");
   const [nameEdited, setNameEdited] = useState(false);
   const [selectedAssets, setSelectedAssets] = useState<string[]>([]);
-  const [baseModel, setBaseModel]   = useState(BASE_MODELS_SEG[0]);
+  const [baseModel, setBaseModel]   = useState(BASE_MODELS_DET[0]);
   const [epochs, setEpochs]         = useState(DEFAULT_EPOCHS);
   const [batchSize, setBatchSize]   = useState(DEFAULT_BATCH);
   const [imgsz, setImgsz]           = useState(DEFAULT_IMGSZ);
@@ -60,7 +60,7 @@ export default function NewRunModal({ assets, runs, onClose, onCreate }: Props) 
   }, [assets, selectedAssets]);
 
   // Models available for the current mode. In mixed/unknown the user chooses.
-  const [mixedChoice, setMixedChoice] = useState<"seg" | "det">("seg");
+  const [mixedChoice, setMixedChoice] = useState<"seg" | "det">("det");
   const availableModels = useMemo(() => {
     if (annotationMode === "seg") return BASE_MODELS_SEG;
     if (annotationMode === "det") return BASE_MODELS_DET;
@@ -77,7 +77,7 @@ export default function NewRunModal({ assets, runs, onClose, onCreate }: Props) 
       const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id];
       if (!nameEdited) {
         const first = assets.find(a => a.id === next[0]);
-        setName(first ? `${first.name.toLowerCase().replace(/\s+/g, "-")}-${baseModel}-v1` : "");
+        setName(first ? `${first.name.toLowerCase().replace(/\s+/g, "-")}-${effectiveModel}-v1` : "");
       }
       return next;
     });

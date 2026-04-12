@@ -103,7 +103,12 @@ def retry_on_cpu(config: dict):
         raise RuntimeError((stderr_output or "CPU fallback failed").strip())
 
 
-def build_dataset(images: list[dict], class_map: list[str], output_dir: Path) -> Path:
+def task_for_model(base_model: str) -> str:
+    """Return 'segment' for *-seg models, 'detect' for plain detection models."""
+    return "segment" if base_model.endswith("-seg") else "detect"
+
+
+def build_dataset(images: list[dict], class_map: list[str], output_dir: Path, task: str) -> Path:
     """
     Copy a locked set of image/label pairs into a merged dataset directory
     and write a data.yaml for Ultralytics.
@@ -157,7 +162,7 @@ def build_dataset(images: list[dict], class_map: list[str], output_dir: Path) ->
         "val":   "images/train",
         "nc":    len(class_map),
         "names": class_map,
-        "task":  "segment",
+        "task":  task,
     }
     with open(data_yaml, "w") as f:
         yaml.dump(yaml_content, f, default_flow_style=False)
@@ -193,11 +198,15 @@ def get_gpu_mb() -> int | None:
 
 # ── training callback ──────────────────────────────────────────────────────────
 
-def make_on_train_epoch_end(total_epochs: int):
+def make_on_train_epoch_end(total_epochs: int, task: str):
+    # Metric key suffix differs by task: "(M)" = mask (seg), "(B)" = box (det).
+    suffix = "(M)" if task == "segment" else "(B)"
+
     def on_train_epoch_end(trainer):
         metrics = trainer.metrics or {}
 
-        # Epoch-averaged losses from tloss tensor [box, seg, cls, dfl] for seg models.
+        # Epoch-averaged losses from tloss tensor.
+        # Seg: [box, seg, cls, dfl] — Det: [box, cls, dfl]
         loss_box = loss_cls = loss_dfl = None
         try:
             tl = trainer.tloss
@@ -208,17 +217,15 @@ def make_on_train_epoch_end(total_epochs: int):
         except Exception:
             pass
 
-        # Validation precision & recall — seg models use (M) mask metrics.
         precision = recall = None
         try:
-            p = metrics.get("metrics/precision(M)")
-            r = metrics.get("metrics/recall(M)")
+            p = metrics.get(f"metrics/precision{suffix}")
+            r = metrics.get(f"metrics/recall{suffix}")
             if p is not None: precision = round(float(p), 4)
             if r is not None: recall    = round(float(r), 4)
         except Exception:
             pass
 
-        # Early stopping: Ultralytics sets trainer.stop = True when patience runs out.
         early_stop = bool(getattr(trainer, "stop", False))
 
         emit({
@@ -229,7 +236,7 @@ def make_on_train_epoch_end(total_epochs: int):
             "lossBox":     loss_box,
             "lossCls":     loss_cls,
             "lossDfl":     loss_dfl,
-            "mAP":         round(float(metrics.get("metrics/mAP50(M)", 0)), 4) if metrics else None,
+            "mAP":         round(float(metrics.get(f"metrics/mAP50{suffix}", 0)), 4) if metrics else None,
             "precision":   precision,
             "recall":      recall,
             "ramMB":       get_ram_mb(),
@@ -250,18 +257,19 @@ def main():
 
     images       = config["images"]             # locked snapshot: [{img, lbl, mtime}, ...]
     class_map    = config["classMap"]
-    base_model   = config["baseModel"]          # e.g. "yolo26n"
+    base_model   = config["baseModel"]          # e.g. "yolo26n" or "yolo26n-seg"
     epochs       = int(config["epochs"])
     batch_size   = int(config["batchSize"])     # -1 = auto
     imgsz        = int(config["imgsz"])
     device       = config["device"]             # "auto" | "cpu" | "cuda:0" | "mps"
     output_path  = Path(config["outputPath"]).expanduser()
+    task         = task_for_model(base_model)   # "segment" | "detect"
 
     output_path.mkdir(parents=True, exist_ok=True)
 
     # Build merged dataset from the locked image list.
     try:
-        data_yaml, dataset_size = build_dataset(images, class_map, output_path)
+        data_yaml, dataset_size = build_dataset(images, class_map, output_path, task)
         emit({"type": "dataset", "imageCount": dataset_size})
     except Exception as e:
         emit({"type": "error", "message": f"Failed to build dataset: {e}"})
@@ -278,7 +286,7 @@ def main():
         sys.exit(1)
 
     # Register epoch callback.
-    model.add_callback("on_train_epoch_end", make_on_train_epoch_end(epochs))
+    model.add_callback("on_train_epoch_end", make_on_train_epoch_end(epochs, task))
 
     # Train (or resume).
     try:
@@ -306,11 +314,12 @@ def main():
             emit({"type": "error", "message": f"Training failed: {e}"})
             sys.exit(1)
 
-    # Extract final metrics.
+    # Extract final metrics (key suffix depends on task).
+    suffix = "(M)" if task == "segment" else "(B)"
     try:
         metrics      = results.results_dict
-        mAP50        = round(float(metrics.get("metrics/mAP50(M)",    0)), 4)
-        mAP50_95     = round(float(metrics.get("metrics/mAP50-95(M)", 0)), 4)
+        mAP50        = round(float(metrics.get(f"metrics/mAP50{suffix}",    0)), 4)
+        mAP50_95     = round(float(metrics.get(f"metrics/mAP50-95{suffix}", 0)), 4)
         weights_path = str(output_path / "weights" / "weights" / "best.pt")
     except Exception:
         mAP50 = mAP50_95 = 0.0

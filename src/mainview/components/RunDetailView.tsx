@@ -251,7 +251,7 @@ interface Props {
 
 export default function RunDetailView({ run, progress, onClose, onUpdate, onStartFresh, onResume, onPause, onStop }: Props) {
   const [lines,          setLines]          = useState<string[]>([]);
-  const [runMeta,        setRunMeta]        = useState<{ found: boolean; classMap: string[]; imageCount: number; newCount: number; modifiedCount: number } | null>(null);
+  const [runMeta,        setRunMeta]        = useState<{ found: boolean; classMap: string[]; imageCount: number; newCount: number; modifiedCount: number; hasPolygons: boolean } | null>(null);
   const [showMetricsInfo, setShowMetricsInfo] = useState(false);
   const logEndRef = useRef<HTMLDivElement>(null);
 
@@ -330,7 +330,12 @@ export default function RunDetailView({ run, progress, onClose, onUpdate, onStar
           {(run.status === "idle" || run.status === "done" || run.status === "failed") && (
             <HeaderBtn onClick={onStartFresh} bg="var(--accent)"><Play size={13} fill="#fff" />{run.status === "idle" ? "Start" : run.status === "done" ? "Start Again" : "Retry"}</HeaderBtn>
           )}
-          {run.status === "paused" && <HeaderBtn onClick={onResume} bg="#3B82F6"><Play size={13} fill="#fff" /> Resume</HeaderBtn>}
+          {run.status === "paused" && (() => {
+            const modelMismatch = runMeta?.hasPolygons === true && !run.baseModel.endsWith("-seg");
+            return modelMismatch
+              ? <span style={{ fontSize: 11, color: "#F59E0B", padding: "4px 10px", borderRadius: 5, border: "1px solid rgba(245,158,11,0.4)", background: "rgba(245,158,11,0.08)", maxWidth: 260, lineHeight: 1.4 }}>Dataset now has polygons — start a fresh run with a seg model</span>
+              : <HeaderBtn onClick={onResume} bg="#3B82F6"><Play size={13} fill="#fff" /> Resume</HeaderBtn>;
+          })()}
           {run.status === "training" && <HeaderBtn onClick={onPause} bg="#F97316"><Pause size={13} fill="#fff" /> Pause</HeaderBtn>}
           {(run.status === "training" || run.status === "installing" || run.status === "paused") && (
             <HeaderBtn onClick={onStop} bg="#EF4444"><Square size={13} fill="#fff" /> Stop</HeaderBtn>

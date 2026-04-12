@@ -96,7 +96,6 @@ async function scanAnnotatedImages(assetPaths: string[]): Promise<SnapEntry[]> {
 /**
  * Scan an asset's label files and return whether any annotation is a true
  * polygon (not just a bbox converted to an axis-aligned 4-corner rectangle).
- * Used as a one-time migration for assets that predate the hasPolygons field.
  */
 async function detectHasPolygons(storagePath: string): Promise<boolean> {
 	const labelsDir = join(storagePath, "labels");
@@ -131,14 +130,34 @@ async function detectHasPolygons(storagePath: string): Promise<boolean> {
 	return false;
 }
 
-async function pruneSnapshot(images: SnapEntry[]): Promise<SnapEntry[]> {
+/**
+ * Refresh a snapshot for resume:
+ * - Keep images whose label file still exists and is non-empty (update mtime).
+ * - Drop images whose label was deleted or emptied.
+ * - Add any newly annotated images from assetPaths not yet in the snapshot.
+ *
+ * This means resume always trains on the current state of annotations —
+ * new and modified labels are included, deleted ones are removed.
+ */
+async function refreshSnapshot(images: SnapEntry[], assetPaths: string[]): Promise<SnapEntry[]> {
 	const kept: SnapEntry[] = [];
+	const inSnapshot = new Set<string>();
+
 	for (const e of images) {
-		if (!(await Bun.file(e.lbl).exists())) continue;
+		inSnapshot.add(e.img);
+		const lblFile = Bun.file(e.lbl);
+		if (!(await lblFile.exists())) continue;
+		if (!(await lblFile.text()).trim()) continue;   // annotation removed
 		const s = await stat(e.lbl);
-		if (Math.floor(s.mtimeMs / 1000) !== e.mtime) continue;
-		kept.push(e);
+		kept.push({ img: e.img, lbl: e.lbl, mtime: Math.floor(s.mtimeMs / 1000) });
 	}
+
+	// Pick up images annotated since the run was created.
+	const current = await scanAnnotatedImages(assetPaths);
+	for (const e of current) {
+		if (!inSnapshot.has(e.img)) kept.push(e);
+	}
+
 	return kept;
 }
 
@@ -186,18 +205,19 @@ const rpc = defineElectrobunRPC("bun", {
 									? { ...r, status: "paused" } : r
 							);
 						}
-						// One-time migration: compute hasPolygons for assets that predate the field.
-						let migrated = false;
+						// Recompute hasPolygons from disk on every load — label files are the
+						// authoritative source. Only persist if something changed.
 						if (Array.isArray(data.assets)) {
-							for (const asset of data.assets) {
-								if (asset.hasPolygons === undefined && asset.storagePath) {
-									asset.hasPolygons = await detectHasPolygons(exp(asset.storagePath));
-									migrated = true;
+							let dirty = false;
+							await Promise.all(data.assets.map(async (asset: { storagePath?: string; hasPolygons?: boolean }) => {
+								if (!asset.storagePath) return;
+								const detected = await detectHasPolygons(exp(asset.storagePath));
+								if (detected !== asset.hasPolygons) {
+									asset.hasPolygons = detected;
+									dirty = true;
 								}
-							}
-						}
-						if (migrated) {
-							await Bun.write(studioFile, JSON.stringify(data, null, 2));
+							}));
+							if (dirty) await Bun.write(studioFile, JSON.stringify(data, null, 2));
 						}
 						return data;
 					}
@@ -350,9 +370,10 @@ const rpc = defineElectrobunRPC("bun", {
 					await Bun.write(metaPath, JSON.stringify({ classMap: config.classMap, assetPaths: config.assetPaths, images }));
 				} else {
 					try {
-						const meta = JSON.parse(await Bun.file(metaPath).text());
-						images = await pruneSnapshot(meta.images ?? []);
-						await Bun.write(metaPath, JSON.stringify({ classMap: meta.classMap ?? config.classMap, assetPaths: meta.assetPaths ?? config.assetPaths, images }));
+						const meta        = JSON.parse(await Bun.file(metaPath).text());
+						const assetPaths  = meta.assetPaths ?? config.assetPaths;
+						images = await refreshSnapshot(meta.images ?? [], assetPaths);
+						await Bun.write(metaPath, JSON.stringify({ classMap: meta.classMap ?? config.classMap, assetPaths, images }));
 					} catch {
 						// No meta yet (run predates this feature) — build fresh snapshot.
 						images = await scanAnnotatedImages(config.assetPaths);
@@ -385,7 +406,7 @@ const rpc = defineElectrobunRPC("bun", {
 			},
 
 			readRunMeta: async ({ outputPath }: { outputPath: string }) => {
-				const EMPTY = { found: false, classMap: [] as string[], imageCount: 0, newCount: 0, modifiedCount: 0 };
+				const EMPTY = { found: false, classMap: [] as string[], imageCount: 0, newCount: 0, modifiedCount: 0, hasPolygons: false };
 				try {
 					const meta = JSON.parse(await Bun.file(join(exp(outputPath), "run-meta.json")).text());
 					const snap = new Map<string, number>(
@@ -408,7 +429,11 @@ const rpc = defineElectrobunRPC("bun", {
 							if (Math.floor(s.mtimeMs / 1000) !== snap.get(imgPath)) modifiedCount++;
 						}
 					}
-					return { found: true, classMap: meta.classMap ?? [], imageCount: snap.size, newCount, modifiedCount };
+					// Check if current annotations have true polygons (user may have added them after pausing).
+					const assetPaths: string[] = meta.assetPaths ?? [];
+					const polyResults = await Promise.all(assetPaths.map(p => detectHasPolygons(exp(p))));
+					const hasPolygons = polyResults.some(Boolean);
+					return { found: true, classMap: meta.classMap ?? [], imageCount: snap.size, newCount, modifiedCount, hasPolygons };
 				} catch { return EMPTY; }
 			},
 

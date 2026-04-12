@@ -83,6 +83,7 @@ type RPCSchema = {
           imageCount:    number;
           newCount:      number;
           modifiedCount: number;
+          hasPolygons:   boolean;
         };
       };
       stopTraining: {
@@ -133,7 +134,7 @@ type RPCSchema = {
         };
       };
       startHubPush: {
-        params:   { modelPath: string; repoId: string; token: string };
+        params:   { modelPath: string; repoId: string; token: string; runName: string };
         response: { jobId: string };
       };
       readHubLog: {

@@ -13,7 +13,7 @@ export interface Asset {
   updatedAt: string;
   thumbnailColor: string;
   // true if any annotation in this asset is a true polygon (not just a bbox rectangle).
-  // undefined for assets created before this field was added.
+  // Always computed from label files on load; drives model type selection in the training modal.
   hasPolygons?: boolean;
 }
 
