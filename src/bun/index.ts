@@ -10,6 +10,7 @@ import {
 	prepareEnvironment, runInference, runProcess, runWithPTY, streamProcessOutput, checkpointPath,
 	coalescePipProgress,
 } from "./util";
+import { parseSegmentationLine, isTruePolygon } from "./polygon";
 
 const IMAGE_EXTS = new Set([".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".tiff", ".tif"]);
 
@@ -101,30 +102,13 @@ async function detectHasPolygons(storagePath: string): Promise<boolean> {
 	const labelsDir = join(storagePath, "labels");
 	let files: string[];
 	try { files = await readdir(labelsDir); } catch { return false; }
-	const EPS = 1e-5;
 	for (const f of files) {
 		if (!f.endsWith(".txt")) continue;
 		let text: string;
 		try { text = await Bun.file(join(labelsDir, f)).text(); } catch { continue; }
 		for (const line of text.trim().split("\n")) {
-			const parts = line.trim().split(" ").map(Number);
-			if (parts.length < 7 || (parts.length - 1) % 2 !== 0) continue;
-			const pts: Array<{ x: number; y: number }> = [];
-			for (let i = 1; i < parts.length; i += 2) pts.push({ x: parts[i], y: parts[i + 1] });
-			if (pts.length === 4) {
-				const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
-				const minX = Math.min(...xs), maxX = Math.max(...xs);
-				const minY = Math.min(...ys), maxY = Math.max(...ys);
-				const isRect =
-					Math.abs(pts[0].x - minX) < EPS && Math.abs(pts[0].y - minY) < EPS &&
-					Math.abs(pts[1].x - maxX) < EPS && Math.abs(pts[1].y - minY) < EPS &&
-					Math.abs(pts[2].x - maxX) < EPS && Math.abs(pts[2].y - maxY) < EPS &&
-					Math.abs(pts[3].x - minX) < EPS && Math.abs(pts[3].y - maxY) < EPS;
-				if (!isRect) return true;
-			} else {
-				// >4 points — definitely a true polygon
-				return true;
-			}
+			const pts = parseSegmentationLine(line);
+			if (pts && isTruePolygon(pts)) return true;
 		}
 	}
 	return false;
@@ -259,12 +243,10 @@ const rpc = defineElectrobunRPC("bun", {
 							const parts = line.split(" ").map(Number);
 							const classIndex = parts[0];
 							// YOLO segmentation: class x1 y1 x2 y2 ... (≥7 tokens, even count of coords)
-							if (parts.length >= 7 && (parts.length - 1) % 2 === 0) {
-								const points: Array<{ x: number; y: number }> = [];
-								for (let i = 1; i < parts.length; i += 2)
-									points.push({ x: parts[i], y: parts[i + 1] });
-								const xs = points.map(p => p.x);
-								const ys = points.map(p => p.y);
+							const segPts = parseSegmentationLine(line);
+							if (segPts) {
+								const xs = segPts.map(p => p.x);
+								const ys = segPts.map(p => p.y);
 								const minX = Math.min(...xs), maxX = Math.max(...xs);
 								const minY = Math.min(...ys), maxY = Math.max(...ys);
 								const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
@@ -272,15 +254,9 @@ const rpc = defineElectrobunRPC("bun", {
 								// If the polygon is exactly the 4-corner axis-aligned rectangle that
 								// saveAnnotations generates for a plain bbox (TL TR BR BL), treat it
 								// as a bbox — don't set points — so hasPolygons stays false.
-								const EPS = 1e-5;
-								const isBboxRect = points.length === 4 &&
-									Math.abs(points[0].x - minX) < EPS && Math.abs(points[0].y - minY) < EPS &&
-									Math.abs(points[1].x - maxX) < EPS && Math.abs(points[1].y - minY) < EPS &&
-									Math.abs(points[2].x - maxX) < EPS && Math.abs(points[2].y - maxY) < EPS &&
-									Math.abs(points[3].x - minX) < EPS && Math.abs(points[3].y - maxY) < EPS;
-								return isBboxRect
-									? { classIndex, cx, cy, w, h }
-									: { classIndex, cx, cy, w, h, points };
+								return isTruePolygon(segPts)
+									? { classIndex, cx, cy, w, h, points: segPts }
+									: { classIndex, cx, cy, w, h };
 							}
 							const [ci, cx, cy, w, h] = parts;
 							return { classIndex: ci, cx, cy, w, h };
