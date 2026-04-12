@@ -196,7 +196,20 @@ const rpc = defineElectrobunRPC("bun", {
 								const ys = points.map(p => p.y);
 								const minX = Math.min(...xs), maxX = Math.max(...xs);
 								const minY = Math.min(...ys), maxY = Math.max(...ys);
-								return { classIndex, cx: (minX + maxX) / 2, cy: (minY + maxY) / 2, w: maxX - minX, h: maxY - minY, points };
+								const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+								const w  = maxX - minX,       h  = maxY - minY;
+								// If the polygon is exactly the 4-corner axis-aligned rectangle that
+								// saveAnnotations generates for a plain bbox (TL TR BR BL), treat it
+								// as a bbox — don't set points — so hasPolygons stays false.
+								const EPS = 1e-5;
+								const isBboxRect = points.length === 4 &&
+									Math.abs(points[0].x - minX) < EPS && Math.abs(points[0].y - minY) < EPS &&
+									Math.abs(points[1].x - maxX) < EPS && Math.abs(points[1].y - minY) < EPS &&
+									Math.abs(points[2].x - maxX) < EPS && Math.abs(points[2].y - maxY) < EPS &&
+									Math.abs(points[3].x - minX) < EPS && Math.abs(points[3].y - maxY) < EPS;
+								return isBboxRect
+									? { classIndex, cx, cy, w, h }
+									: { classIndex, cx, cy, w, h, points };
 							}
 							const [ci, cx, cy, w, h] = parts;
 							return { classIndex: ci, cx, cy, w, h };
