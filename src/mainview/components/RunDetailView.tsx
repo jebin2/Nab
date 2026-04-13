@@ -7,6 +7,7 @@ import { getRPC } from "../lib/rpc";
 import { parseLog, type LogProgress } from "../lib/trainLog";
 import { parseLogLine } from "../lib/logParser";
 import { panel, sectionLabel, statusBadge, dropdownItemHover, mutedText, configStripLabel } from "../lib/styleUtils";
+import { BASE_MODELS_DET, BASE_MODELS_SEG } from "../lib/constants";
 import LogPanel from "./LogPanel";
 
 // ── Config strip helpers ───────────────────────────────────────────────────────
@@ -257,11 +258,12 @@ function Row({ label, value, color }: { label: string; value: string; color: str
 // ── UpdateDatasetModal ────────────────────────────────────────────────────────
 
 function UpdateDatasetModal({
-  runMeta, updating, onConfirm, onCancel,
+  runMeta, currentBaseModel, updating, onConfirm, onCancel,
 }: {
   runMeta: RunMetaResult;
+  currentBaseModel: string;
   updating: boolean;
-  onConfirm: () => void;
+  onConfirm: (newBaseModel: string | null) => void;
   onCancel: () => void;
 }) {
   const changes: string[] = [];
@@ -271,6 +273,12 @@ function UpdateDatasetModal({
 
   const polyFrom = runMeta.hasPolygons        ? "segmentation" : "detection";
   const polyTo   = runMeta.currentHasPolygons ? "segmentation" : "detection";
+
+  // Default to the same size variant in the new model family.
+  const newModels  = runMeta.currentHasPolygons ? BASE_MODELS_SEG : BASE_MODELS_DET;
+  const sizeIndex  = (runMeta.currentHasPolygons ? BASE_MODELS_DET : BASE_MODELS_SEG).indexOf(currentBaseModel);
+  const defaultNew = newModels[sizeIndex >= 0 ? sizeIndex : 0];
+  const [selectedModel, setSelectedModel] = useState(defaultNew);
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center" }}
@@ -290,17 +298,37 @@ function UpdateDatasetModal({
           {changes.map(c => (
             <div key={c} style={{ fontSize: 12, fontFamily: "monospace", color: "var(--text)" }}>{c}</div>
           ))}
-          {changes.length === 0 && (
+          {changes.length === 0 && runMeta.hasPolygonsChanged && (
             <div style={{ fontSize: 12, color: "var(--text-muted)" }}>annotation type changed</div>
           )}
         </div>
 
         {runMeta.hasPolygonsChanged && (
-          <div style={{ padding: "10px 12px", borderRadius: 6, background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.3)" }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "#F59E0B", marginBottom: 4 }}>Annotation type changed</div>
-            <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5 }}>
-              Dataset was <strong>{polyFrom}</strong>, annotations are now <strong>{polyTo}</strong>.
-              After updating, start a new run with a matching model type.
+          <div style={{ padding: "12px", borderRadius: 6, background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.3)", display: "flex", flexDirection: "column", gap: 10 }}>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#F59E0B", marginBottom: 2 }}>Annotation type changed</div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5 }}>
+                Dataset was <strong>{polyFrom}</strong>, annotations are now <strong>{polyTo}</strong>.
+                Select the model to use for future runs:
+              </div>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              {newModels.map(m => (
+                <label
+                  key={m}
+                  style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 6, cursor: "pointer", background: selectedModel === m ? "rgba(59,130,246,0.12)" : "transparent", border: `1px solid ${selectedModel === m ? "rgba(59,130,246,0.4)" : "transparent"}` }}
+                >
+                  <input
+                    type="radio"
+                    name="newModel"
+                    value={m}
+                    checked={selectedModel === m}
+                    onChange={() => setSelectedModel(m)}
+                    style={{ accentColor: "var(--accent)", cursor: "pointer" }}
+                  />
+                  <span style={{ fontSize: 12, fontFamily: "monospace", color: "var(--text)" }}>{m}</span>
+                </label>
+              ))}
             </div>
           </div>
         )}
@@ -316,7 +344,7 @@ function UpdateDatasetModal({
             style={{ flex: 1, padding: "9px", borderRadius: 7, border: "1px solid var(--border)", background: "transparent", color: "var(--text-muted)", fontSize: 13, cursor: updating ? "not-allowed" : "pointer", fontFamily: "inherit", opacity: updating ? 0.5 : 1 }}
           >Cancel</button>
           <button
-            onClick={onConfirm}
+            onClick={() => onConfirm(runMeta.hasPolygonsChanged ? selectedModel : null)}
             disabled={updating}
             style={{ flex: 1, padding: "9px", borderRadius: 7, border: "none", background: updating ? "var(--border)" : "#F59E0B", color: updating ? "var(--text-muted)" : "#fff", fontSize: 13, fontWeight: 600, cursor: updating ? "not-allowed" : "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
           >
@@ -713,11 +741,17 @@ export default function RunDetailView({ run, progress, onClose, onUpdate, onStar
       {showUpdateModal && runMeta && (
         <UpdateDatasetModal
           runMeta={runMeta}
+          currentBaseModel={run.baseModel}
           updating={updating}
-          onConfirm={async () => {
+          onConfirm={async (newBaseModel) => {
             setUpdating(true);
             try {
               await getRPC().request.updateDataset({ outputPath: run.outputPath });
+              if (newBaseModel) {
+                // Model type changed — reset to idle so the user must Start Fresh
+                // (the old checkpoint is incompatible with the new model).
+                onUpdate({ baseModel: newBaseModel, status: "idle" });
+              }
               const fresh = await getRPC().request.readRunMeta({ outputPath: run.outputPath });
               setRunMeta(fresh as RunMetaResult);
             } catch (err) {
