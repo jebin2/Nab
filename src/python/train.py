@@ -44,8 +44,10 @@ def load_model(base_model: str, checkpoint: Path, resuming: bool, models_dir: Pa
     if resuming:
         emit({"type": "stderr", "text": f"[train] Resuming from checkpoint: {checkpoint}"})
         return YOLO(str(checkpoint))
-    cached = models_dir / f"{base_model}.pt"
-    return YOLO(str(cached))
+    # Change to the models cache dir so Ultralytics finds (or downloads) the
+    # .pt file there rather than in an arbitrary CWD.
+    os.chdir(models_dir)
+    return YOLO(f"{base_model}.pt")
 
 
 def is_cuda_unavailable_error(err: Exception) -> bool:
