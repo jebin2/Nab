@@ -1,5 +1,5 @@
 import { useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from "react";
-import { type BBox, type ClassDef, type AnnotateTool, clampBBox, clampPt, bboxToPoints, pointsToBbox } from "../lib/annotationTypes";
+import { type BBox, type ClassDef, type AnnotateTool, clampBBox, clampPt, pointsToBbox } from "../lib/annotationTypes";
 
 interface Props {
   tool: AnnotateTool;
@@ -748,7 +748,6 @@ const AnnotationCanvas = forwardRef<CanvasHandle, Props>(function AnnotationCanv
         previewAnnRef.current = {
           ...orig,
           ...clamped,
-          points: bboxToPoints(clamped.cx, clamped.cy, clamped.w, clamped.h),
         };
         redraw();
         return;
@@ -806,7 +805,6 @@ const AnnotationCanvas = forwardRef<CanvasHandle, Props>(function AnnotationCanv
             id:         crypto.randomUUID(),
             classIndex: activeClassIndexRef.current,
             ...clamped,
-            points: bboxToPoints(clamped.cx, clamped.cy, clamped.w, clamped.h),
           };
           onAnnotationsChangeRef.current([...annotationsRef.current, newAnn]);
           onSelectRef.current(newAnn.id);

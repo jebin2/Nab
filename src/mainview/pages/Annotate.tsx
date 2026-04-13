@@ -8,7 +8,7 @@ import AnnotationCanvas, { type CanvasHandle } from "../components/AnnotationCan
 import ImageList from "../components/ImageList";
 import ClassPanel from "../components/ClassPanel";
 import UploadZone from "../components/UploadZone";
-import { type AnnotateTool, bboxToPoints } from "../lib/annotationTypes";
+import { type AnnotateTool } from "../lib/annotationTypes";
 import { type Asset } from "../lib/types";
 import { CLASS_COLORS } from "../lib/constants";
 import { useAnnotationData } from "../lib/useAnnotationData";
@@ -261,14 +261,9 @@ export default function Annotate({ asset, onAssetUpdate, onBack }: Props) {
           }}
           onEditAnnotation={(id, patch) => {
             if (!currentImage) return;
-            updateAnnotations(currentImage.annotations.map(a => {
-              if (a.id !== id) return a;
-              const updated = { ...a, ...patch };
-              // Keep 4-corner points in sync when bbox is edited manually
-              if (updated.points?.length === 4)
-                updated.points = bboxToPoints(updated.cx, updated.cy, updated.w, updated.h);
-              return updated;
-            }));
+            updateAnnotations(currentImage.annotations.map(a =>
+              a.id !== id ? a : { ...a, ...patch }
+            ));
           }}
         />
       </div>

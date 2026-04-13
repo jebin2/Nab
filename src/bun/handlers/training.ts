@@ -157,11 +157,25 @@ export const trainingHandlers = {
 		const venvPython = await prepareEnvironment(logPath, config.id);
 		await appendFile(logPath, JSON.stringify({ type: "stderr", text: "[setup] Starting training..." }) + "\n");
 
-		const proc = Bun.spawn([venvPython, TRAIN_SCRIPT], { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
+		let proc: ReturnType<typeof Bun.spawn>;
+		try {
+			proc = Bun.spawn([venvPython, TRAIN_SCRIPT], {
+				stdin: "pipe", stdout: "pipe", stderr: "pipe",
+				env: { ...process.env, PYTHONUNBUFFERED: "1" },
+			});
+		} catch (spawnErr) {
+			await appendFile(logPath, JSON.stringify({
+				type: "error",
+				message: `Failed to start Python process: ${(spawnErr as Error).message}`,
+			}) + "\n");
+			return { started: false };
+		}
+
 		runningProcesses.set(config.id, proc);
 		// Pass datasetPath to Python; Python writes data.yaml and trains from there.
-		proc.stdin.write(JSON.stringify({ ...config, datasetPath }));
-		proc.stdin.end();
+		const stdin = proc.stdin as import("bun").FileSink;
+		stdin.write(JSON.stringify({ ...config, datasetPath }));
+		stdin.end();
 
 		streamProcessOutput(proc, {
 			stdoutHandler: line => appendFile(logPath, line + "\n").catch(console.error),

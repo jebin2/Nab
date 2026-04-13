@@ -1,4 +1,4 @@
-import { appendFile, mkdir, writeFile } from "fs/promises";
+import { appendFile, mkdir, rm, unlink, writeFile } from "fs/promises";
 import { join } from "path";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -310,7 +310,24 @@ export async function prepareEnvironment(
 		await log("[setup] Python runtime ready.");
 	}
 
-	if (!(await Bun.file(VENV_READY_MARKER).exists())) {
+	// Verify the venv is healthy (e.g. symlinks may point to an old path after a
+	// project rename). If the Python binary can't be executed, wipe and recreate.
+	const venvOk = await Bun.file(VENV_READY_MARKER).exists() &&
+		await new Promise<boolean>(resolve => {
+			try {
+				const p = Bun.spawn([VENV_PYTHON, "-c", "import sys; sys.exit(0)"], {
+					stdout: "ignore", stderr: "ignore",
+				});
+				p.exited.then(code => resolve(code === 0)).catch(() => resolve(false));
+			} catch { resolve(false); }
+		});
+
+	if (!venvOk) {
+		if (await Bun.file(VENV_READY_MARKER).exists()) {
+			await log("[setup] Virtual environment is broken — recreating...");
+			await rm(VENV_DIR, { recursive: true, force: true }).catch(() => {});
+			await unlink(VENV_READY_MARKER).catch(() => {});
+		}
 		await log("[setup] Creating virtual environment at ~/.nab/venv...");
 		await run([RUNTIME_PYTHON, "-m", "venv", "--clear", VENV_DIR], "venv create");
 		await log("[setup] Virtual environment created.");
