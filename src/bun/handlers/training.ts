@@ -1,49 +1,90 @@
-import { mkdir, appendFile, unlink, stat } from "fs/promises";
-import { join } from "path";
+import { appendFile, copyFile, mkdir, rm, stat, readdir, unlink } from "fs/promises";
+import { basename, dirname, extname, join } from "path";
 import {
 	TRAIN_SCRIPT, runningProcesses,
 	prepareEnvironment, streamProcessOutput, checkpointPath, modelPath as getModelPath,
 } from "../util";
-import { exp, readLogFile, detectHasPolygons, listAnnotatedImages } from "../common";
+import { exp, IMAGE_EXTS, detectHasPolygons, listAnnotatedImages, readLogFile, type AnnotatedImageEntry } from "../common";
+import { parseSegmentationLine, isTruePolygon } from "../polygon";
 
-// ── Dataset snapshot ──────────────────────────────────────────────────────────
+// ── run-meta.json schema ──────────────────────────────────────────────────────
 
-export type SnapEntry = { img: string; lbl: string; mtime: number };
+type RunMeta = {
+	classMap: string[];
+	assetPaths: string[];
+	hasPolygons: boolean;    // true at the time the dataset was last copied
+	imageCount: number;      // annotated images in the dataset at copy time
+	datasetCopiedAt: number; // Date.now() ms timestamp of the last copy
+};
 
-async function scanAnnotatedImages(assetPaths: string[]): Promise<SnapEntry[]> {
-	const result = await Promise.all(assetPaths.map(path => listAnnotatedImages(path)));
-	return result.flat().map(entry => ({
-		img: entry.imgPath,
-		lbl: entry.labelPath,
-		mtime: entry.mtime,
-	}));
-}
+// ── Dataset copy ──────────────────────────────────────────────────────────────
+
+const DATASET_SUBDIR   = join("dataset", "images", "train");
+const DATASET_LBL_SUBDIR = join("dataset", "labels", "train");
 
 /**
- * Refresh a snapshot for resume:
- * - Keep images whose label file still exists and is non-empty (update mtime).
- * - Drop images whose label was deleted or emptied.
- * - Add any newly annotated images from assetPaths not yet in the snapshot.
+ * Copy annotated images + labels from asset folders into
+ * outputPath/dataset/images/train/ and outputPath/dataset/labels/train/.
+ *
+ * Progress is appended to logPath as dataset_copy_start / dataset_copy_progress
+ * events so the polling loop can surface it in the UI.
+ *
+ * Filename collisions across assets are resolved by prefixing with the
+ * asset folder name — mirrors the logic in the old Python build_dataset.
  */
-async function refreshSnapshot(images: SnapEntry[], assetPaths: string[]): Promise<SnapEntry[]> {
-	const kept: SnapEntry[] = [];
-	const inSnapshot = new Set<string>();
+async function copyDatasetFiles(
+	assetPaths: string[],
+	outputPath: string,
+	logPath: string,
+): Promise<{ imageCount: number; hasPolygons: boolean }> {
+	const imgDir = join(exp(outputPath), DATASET_SUBDIR);
+	const lblDir = join(exp(outputPath), DATASET_LBL_SUBDIR);
 
-	for (const e of images) {
-		inSnapshot.add(e.img);
-		const lblFile = Bun.file(e.lbl);
-		if (!(await lblFile.exists())) continue;
-		if (!(await lblFile.text()).trim()) continue;
-		const s = await stat(e.lbl);
-		kept.push({ img: e.img, lbl: e.lbl, mtime: Math.floor(s.mtimeMs / 1000) });
+	// Wipe any previous copy so stale files don't survive.
+	try { await rm(join(exp(outputPath), "dataset"), { recursive: true, force: true }); } catch {}
+	await mkdir(imgDir, { recursive: true });
+	await mkdir(lblDir, { recursive: true });
+
+	const allEntries = (await Promise.all(assetPaths.map(p => listAnnotatedImages(p)))).flat();
+	const total = allEntries.length;
+
+	await appendFile(logPath, JSON.stringify({ type: "dataset_copy_start", total }) + "\n");
+
+	const seen        = new Set<string>();
+	let   hasPolygons = false;
+	const REPORT_EVERY = 10;
+
+	for (let i = 0; i < allEntries.length; i++) {
+		const entry = allEntries[i];
+
+		// Collision-safe destination name.
+		const srcName = basename(entry.imgPath);
+		let   destName = srcName;
+		if (seen.has(destName)) {
+			const assetBase = basename(dirname(dirname(entry.imgPath)));
+			destName = `${assetBase}__${srcName}`;
+		}
+		seen.add(destName);
+
+		const destStem = destName.slice(0, destName.lastIndexOf("."));
+		await copyFile(entry.imgPath,   join(imgDir, destName));
+		await copyFile(entry.labelPath, join(lblDir, `${destStem}.txt`));
+
+		// Detect polygons inline while the label file is already in scope.
+		if (!hasPolygons) {
+			const text = await Bun.file(entry.labelPath).text();
+			for (const line of text.trim().split("\n")) {
+				const pts = parseSegmentationLine(line);
+				if (pts && isTruePolygon(pts)) { hasPolygons = true; break; }
+			}
+		}
+
+		if ((i + 1) % REPORT_EVERY === 0 || i === allEntries.length - 1) {
+			await appendFile(logPath, JSON.stringify({ type: "dataset_copy_progress", done: i + 1, total }) + "\n");
+		}
 	}
 
-	const current = await scanAnnotatedImages(assetPaths);
-	for (const e of current) {
-		if (!inSnapshot.has(e.img)) kept.push(e);
-	}
-
-	return kept;
+	return { imageCount: total, hasPolygons };
 }
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
@@ -61,32 +102,65 @@ export const trainingHandlers = {
 		}
 		const logPath  = join(exp(config.outputPath), "train.log");
 		const metaPath = join(exp(config.outputPath), "run-meta.json");
-
-		let images: SnapEntry[];
-		if (config.fresh) {
-			images = await scanAnnotatedImages(config.assetPaths);
-			await Bun.write(metaPath, JSON.stringify({ classMap: config.classMap, assetPaths: config.assetPaths, images }));
-		} else {
-			try {
-				const meta       = JSON.parse(await Bun.file(metaPath).text());
-				const assetPaths = meta.assetPaths ?? config.assetPaths;
-				images = await refreshSnapshot(meta.images ?? [], assetPaths);
-				await Bun.write(metaPath, JSON.stringify({ classMap: meta.classMap ?? config.classMap, assetPaths, images }));
-			} catch {
-				// No meta yet (run predates this feature) — build fresh snapshot.
-				images = await scanAnnotatedImages(config.assetPaths);
-				await Bun.write(metaPath, JSON.stringify({ classMap: config.classMap, assetPaths: config.assetPaths, images }));
-			}
-		}
+		const datasetPath = join(exp(config.outputPath), "dataset");
 
 		await appendFile(logPath, JSON.stringify({ type: "start", timestamp: new Date().toISOString(), config }) + "\n");
+
+		let imageCount: number;
+		let hasPolygons: boolean;
+
+		if (config.fresh) {
+			// Copy a fresh snapshot of the current annotated images.
+			const result = await copyDatasetFiles(config.assetPaths, config.outputPath, logPath);
+			imageCount   = result.imageCount;
+			hasPolygons  = result.hasPolygons;
+			const meta: RunMeta = {
+				classMap:        config.classMap,
+				assetPaths:      config.assetPaths,
+				hasPolygons,
+				imageCount,
+				datasetCopiedAt: Date.now(),
+			};
+			await Bun.write(metaPath, JSON.stringify(meta, null, 2));
+		} else {
+			// Resume: use the existing dataset copy as-is.
+			try {
+				const meta: RunMeta = JSON.parse(await Bun.file(metaPath).text());
+				imageCount  = meta.imageCount  ?? 0;
+				hasPolygons = meta.hasPolygons ?? false;
+			} catch {
+				imageCount = 0; hasPolygons = false;
+			}
+
+			// Safety: if the dataset directory is missing (e.g. pre-refactor run),
+			// fall back to a fresh copy so the run can proceed.
+			const imgDir = join(datasetPath, "images", "train");
+			let datasetExists = false;
+			try { datasetExists = (await stat(imgDir)).isDirectory(); } catch {}
+
+			if (!datasetExists) {
+				await appendFile(logPath, JSON.stringify({ type: "stderr", text: "[dataset] Dataset missing — copying from assets..." }) + "\n");
+				const result = await copyDatasetFiles(config.assetPaths, config.outputPath, logPath);
+				imageCount   = result.imageCount;
+				hasPolygons  = result.hasPolygons;
+				const meta: RunMeta = {
+					classMap:        config.classMap,
+					assetPaths:      config.assetPaths,
+					hasPolygons,
+					imageCount,
+					datasetCopiedAt: Date.now(),
+				};
+				await Bun.write(metaPath, JSON.stringify(meta, null, 2));
+			}
+		}
 
 		const venvPython = await prepareEnvironment(logPath, config.id);
 		await appendFile(logPath, JSON.stringify({ type: "stderr", text: "[setup] Starting training..." }) + "\n");
 
 		const proc = Bun.spawn([venvPython, TRAIN_SCRIPT], { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
 		runningProcesses.set(config.id, proc);
-		proc.stdin.write(JSON.stringify({ ...config, images }));
+		// Pass datasetPath to Python; Python writes data.yaml and trains from there.
+		proc.stdin.write(JSON.stringify({ ...config, datasetPath }));
 		proc.stdin.end();
 
 		streamProcessOutput(proc, {
@@ -114,27 +188,101 @@ export const trainingHandlers = {
 		return { lines: await readLogFile(join(exp(outputPath), "train.log")) };
 	},
 
+	/**
+	 * Returns the run's stored metadata plus a drift summary comparing the
+	 * current state of the asset folders against the last dataset copy.
+	 *
+	 * Called when RunDetailView opens so the UI can surface an "Update Dataset"
+	 * banner if annotations have changed since the last Start.
+	 */
 	readRunMeta: async ({ outputPath }: { outputPath: string }) => {
-		const EMPTY = { found: false, classMap: [] as string[], imageCount: 0, newCount: 0, modifiedCount: 0, hasPolygons: false };
+		const EMPTY = {
+			found:               false,
+			classMap:            [] as string[],
+			imageCount:          0,
+			hasPolygons:         false,
+			currentHasPolygons:  false,
+			hasPolygonsChanged:  false,
+			newCount:            0,
+			deletedCount:        0,
+			modifiedCount:       0,
+			hasDrift:            false,
+		};
 		try {
-			const meta = JSON.parse(await Bun.file(join(exp(outputPath), "run-meta.json")).text());
-			const snap = new Map<string, number>(
-				(meta.images ?? []).map((e: SnapEntry) => [e.img, e.mtime])
-			);
-			let newCount = 0, modifiedCount = 0;
-			const current = await scanAnnotatedImages(meta.assetPaths ?? []);
-			for (const entry of current) {
-				if (!snap.has(entry.img)) {
-					newCount++;
-					continue;
-				}
-				if (entry.mtime !== snap.get(entry.img)) modifiedCount++;
-			}
+			const meta: RunMeta = JSON.parse(await Bun.file(join(exp(outputPath), "run-meta.json")).text());
+
+			// Count images currently in the copied dataset.
+			const datasetImgDir = join(exp(outputPath), DATASET_SUBDIR);
+			let datasetImageCount = 0;
+			try {
+				const files = await readdir(datasetImgDir);
+				datasetImageCount = files.filter(f => IMAGE_EXTS.has(extname(f).toLowerCase())).length;
+			} catch {}
+
+			// Count current annotated images across all asset folders.
 			const assetPaths: string[] = meta.assetPaths ?? [];
-			const polyResults = await Promise.all(assetPaths.map(p => detectHasPolygons(exp(p))));
-			const hasPolygons = polyResults.some(Boolean);
-			return { found: true, classMap: meta.classMap ?? [], imageCount: snap.size, newCount, modifiedCount, hasPolygons };
+			const currentEntries: AnnotatedImageEntry[] = (
+				await Promise.all(assetPaths.map(p => listAnnotatedImages(p)))
+			).flat();
+			const currentCount = currentEntries.length;
+
+			// Image count drift.
+			const newCount     = Math.max(0, currentCount - datasetImageCount);
+			const deletedCount = Math.max(0, datasetImageCount - currentCount);
+
+			// Label modification: any label file whose mtime is newer than the copy.
+			const copiedAt      = meta.datasetCopiedAt ?? 0;
+			const modifiedCount = currentEntries.filter(e => e.mtime * 1000 > copiedAt).length;
+
+			// Polygon type drift.
+			const polyResults          = await Promise.all(assetPaths.map(p => detectHasPolygons(exp(p))));
+			const currentHasPolygons   = polyResults.some(Boolean);
+			const hasPolygonsChanged   = currentHasPolygons !== (meta.hasPolygons ?? false);
+
+			const hasDrift = newCount > 0 || deletedCount > 0 || modifiedCount > 0 || hasPolygonsChanged;
+
+			return {
+				found:              true,
+				classMap:           meta.classMap      ?? [],
+				imageCount:         meta.imageCount     ?? datasetImageCount,
+				hasPolygons:        meta.hasPolygons    ?? false,
+				currentHasPolygons,
+				hasPolygonsChanged,
+				newCount,
+				deletedCount,
+				modifiedCount,
+				hasDrift,
+			};
 		} catch { return EMPTY; }
+	},
+
+	/**
+	 * Wipe and re-copy the dataset from the asset folders.
+	 * Only valid when the run is not actively training (enforced by the UI).
+	 */
+	updateDataset: async ({ outputPath }: { outputPath: string }) => {
+		const metaPath = join(exp(outputPath), "run-meta.json");
+		const meta: RunMeta = JSON.parse(await Bun.file(metaPath).text());
+
+		// Re-use copyDatasetFiles without a log path (no training in progress).
+		// Write progress to a temp update log so we don't pollute train.log.
+		const updateLogPath = join(exp(outputPath), "dataset-update.log");
+		await Bun.write(updateLogPath, "");
+
+		const { imageCount, hasPolygons } = await copyDatasetFiles(
+			meta.assetPaths, outputPath, updateLogPath,
+		);
+
+		const updated: RunMeta = {
+			...meta,
+			hasPolygons,
+			imageCount,
+			datasetCopiedAt: Date.now(),
+		};
+		await Bun.write(metaPath, JSON.stringify(updated, null, 2));
+		await unlink(updateLogPath).catch(() => {});
+
+		return { imageCount, hasPolygons, previousHasPolygons: meta.hasPolygons };
 	},
 
 	checkWeights: async ({ outputPaths }: { outputPaths: string[] }) => {

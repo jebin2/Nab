@@ -82,13 +82,21 @@ type RPCSchema = {
       readRunMeta: {
         params:   { outputPath: string };
         response: {
-          found:         boolean;
-          classMap:      string[];
-          imageCount:    number;
-          newCount:      number;
-          modifiedCount: number;
-          hasPolygons:   boolean;
+          found:               boolean;
+          classMap:            string[];
+          imageCount:          number;
+          hasPolygons:         boolean;
+          currentHasPolygons:  boolean;
+          hasPolygonsChanged:  boolean;
+          newCount:            number;
+          deletedCount:        number;
+          modifiedCount:       number;
+          hasDrift:            boolean;
         };
+      };
+      updateDataset: {
+        params:   { outputPath: string };
+        response: { imageCount: number; hasPolygons: boolean; previousHasPolygons: boolean };
       };
       stopTraining: {
         params:   { runId: string; clearCheckpoint?: boolean; outputPath?: string };

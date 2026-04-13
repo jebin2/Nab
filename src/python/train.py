@@ -3,17 +3,20 @@ Nab training script — YOLO26 via Ultralytics.
 
 Called by the Bun process with a JSON config on stdin:
 {
-  "runId":      "<uuid>",
-  "name":       "vehicles-yolo26n-v1",
-  "assetPaths": ["/abs/path/to/asset1", ...],
-  "classMap":   ["car", "truck", "bus"],
-  "baseModel":  "yolo26n",
-  "epochs":     100,
-  "batchSize":  16,
-  "imgsz":      640,
-  "device":     "auto",
-  "outputPath": "/abs/path/to/output"
+  "runId":       "<uuid>",
+  "name":        "vehicles-yolo26n-v1",
+  "datasetPath": "/abs/path/to/output/dataset",
+  "classMap":    ["car", "truck", "bus"],
+  "baseModel":   "yolo26n",
+  "epochs":      100,
+  "batchSize":   16,
+  "imgsz":       640,
+  "device":      "auto",
+  "outputPath":  "/abs/path/to/output"
 }
+
+The dataset directory is pre-populated by the Bun process before this
+script runs. Python only writes data.yaml and trains from the existing files.
 
 Progress and results are written to stdout as newline-delimited JSON:
   {"type": "progress", "epoch": 5, "epochs": 100, "loss": 0.432, "mAP": null}
@@ -23,7 +26,6 @@ Progress and results are written to stdout as newline-delimited JSON:
 
 import json
 import os
-import shutil
 import subprocess
 import sys
 import yaml
@@ -109,56 +111,27 @@ def task_for_model(base_model: str) -> str:
     return "segment" if base_model.endswith("-seg") else "detect"
 
 
-def build_dataset(images: list[dict], class_map: list[str], output_dir: Path, task: str) -> Path:
+def prepare_dataset(dataset_path: Path, class_map: list[str], task: str) -> tuple[Path, int]:
     """
-    Copy a locked set of image/label pairs into a merged dataset directory
-    and write a data.yaml for Ultralytics.
+    Write data.yaml for a dataset that was already copied by the Bun process.
 
-    images: list of {"img": "/abs/path/image.jpg", "lbl": "/abs/path/label.txt"}
-    Each pair was snapshot-locked at training start; missing or modified files
-    are already pruned by the Bun backend before this is called.
+    Expected layout (pre-populated by Bun):
+        <dataset_path>/
+            images/train/   ← image files
+            labels/train/   ← label .txt files
+            data.yaml       ← written here
 
-    Output layout:
-        <output_dir>/dataset/
-            images/train/
-            labels/train/
-            data.yaml
+    Returns (data_yaml_path, image_count).
     """
-    dataset_dir = output_dir / "dataset"
-    img_dir     = dataset_dir / "images" / "train"
-    lbl_dir     = dataset_dir / "labels" / "train"
-
-    # Always wipe the train directories before rebuilding so stale files from a
-    # previous run don't silently pollute the dataset (e.g. old labels for images
-    # that were modified or removed from the snapshot).
-    if img_dir.exists():
-        shutil.rmtree(img_dir)
-    if lbl_dir.exists():
-        shutil.rmtree(lbl_dir)
+    img_dir = dataset_path / "images" / "train"
+    lbl_dir = dataset_path / "labels" / "train"
 
     img_dir.mkdir(parents=True, exist_ok=True)
     lbl_dir.mkdir(parents=True, exist_ok=True)
 
-    seen: set[str] = set()
-    for entry in images:
-        img_file = Path(entry["img"])
-        lbl_file = Path(entry["lbl"])
-        if not img_file.exists() or not lbl_file.exists():
-            continue
-
-        dest_name = img_file.name
-        # Avoid collisions across assets by prefixing with the asset folder name.
-        if dest_name in seen:
-            dest_name = f"{img_file.parent.parent.name}__{img_file.name}"
-        seen.add(dest_name)
-
-        shutil.copy2(img_file, img_dir / dest_name)
-        shutil.copy2(lbl_file, lbl_dir / (Path(dest_name).stem + ".txt"))
-
-    # Write data.yaml.
-    data_yaml = dataset_dir / "data.yaml"
+    data_yaml = dataset_path / "data.yaml"
     yaml_content = {
-        "path":  str(dataset_dir),
+        "path":  str(dataset_path),
         "train": "images/train",
         "val":   "images/train",
         "nc":    len(class_map),
@@ -168,7 +141,7 @@ def build_dataset(images: list[dict], class_map: list[str], output_dir: Path, ta
     with open(data_yaml, "w") as f:
         yaml.dump(yaml_content, f, default_flow_style=False)
 
-    image_count = len(list(img_dir.iterdir()))
+    image_count = len(list(img_dir.iterdir())) if img_dir.exists() else 0
     return data_yaml, image_count
 
 
@@ -256,7 +229,7 @@ def main():
         emit({"type": "error", "message": f"Invalid config JSON: {e}"})
         sys.exit(1)
 
-    images       = config["images"]             # locked snapshot: [{img, lbl, mtime}, ...]
+    dataset_path = Path(config["datasetPath"]).expanduser()
     class_map    = config["classMap"]
     base_model   = config["baseModel"]          # e.g. "yolo26n" or "yolo26n-seg"
     epochs       = int(config["epochs"])
@@ -268,12 +241,18 @@ def main():
 
     output_path.mkdir(parents=True, exist_ok=True)
 
-    # Build merged dataset from the locked image list.
+    # Validate that the dataset was pre-populated by the Bun copy phase.
+    img_dir = dataset_path / "images" / "train"
+    if not img_dir.exists() or not any(img_dir.iterdir()):
+        emit({"type": "error", "message": "Dataset directory is empty — start a fresh run to rebuild it."})
+        sys.exit(1)
+
+    # Write data.yaml (Bun already copied the image/label files).
     try:
-        data_yaml, dataset_size = build_dataset(images, class_map, output_path, task)
+        data_yaml, dataset_size = prepare_dataset(dataset_path, class_map, task)
         emit({"type": "dataset", "imageCount": dataset_size})
     except Exception as e:
-        emit({"type": "error", "message": f"Failed to build dataset: {e}"})
+        emit({"type": "error", "message": f"Failed to prepare dataset: {e}"})
         sys.exit(1)
 
     # Check for a checkpoint from a previous paused run — resume if found.

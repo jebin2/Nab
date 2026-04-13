@@ -132,6 +132,23 @@ function LogLine({ line }: { line: string }) {
   const ev = parseLogLine(line);
   if (ev) {
     if (ev.type === "start")    return <div style={{ color: "var(--text-muted)", marginBottom: 2, opacity: 0.6 }}>● run started {new Date(ev.timestamp as string).toLocaleString()}</div>;
+    if (ev.type === "dataset_copy_start") return (
+      <div style={{ color: "var(--text-muted)", marginBottom: 2 }}>
+        copying dataset… (0 / {ev.total as number} images)
+      </div>
+    );
+    if (ev.type === "dataset_copy_progress") {
+      const done  = ev.done  as number;
+      const total = ev.total as number;
+      const pct   = total > 0 ? Math.round((done / total) * 100) : 0;
+      const bar   = "█".repeat(Math.round(pct / 5)) + "░".repeat(20 - Math.round(pct / 5));
+      return (
+        <div style={{ color: "var(--text-muted)", marginBottom: 1, fontFamily: "monospace", fontSize: 11 }}>
+          {bar} {pct}% ({done}/{total})
+          {done === total && <span style={{ color: "#22C55E", marginLeft: 8 }}>✓ dataset ready</span>}
+        </div>
+      );
+    }
     if (ev.type === "progress") return (
       <div style={{ color: "var(--text)", marginBottom: 1 }}>
         <span style={{ color: "var(--text-muted)" }}>epoch {String(ev.epoch).padStart(4)} </span>
@@ -237,6 +254,83 @@ function Row({ label, value, color }: { label: string; value: string; color: str
   );
 }
 
+// ── UpdateDatasetModal ────────────────────────────────────────────────────────
+
+function UpdateDatasetModal({
+  runMeta, updating, onConfirm, onCancel,
+}: {
+  runMeta: RunMetaResult;
+  updating: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const changes: string[] = [];
+  if (runMeta.newCount     > 0) changes.push(`+${runMeta.newCount} new image${runMeta.newCount > 1 ? "s" : ""}`);
+  if (runMeta.deletedCount > 0) changes.push(`−${runMeta.deletedCount} deleted image${runMeta.deletedCount > 1 ? "s" : ""}`);
+  if (runMeta.modifiedCount > 0) changes.push(`${runMeta.modifiedCount} modified label${runMeta.modifiedCount > 1 ? "s" : ""}`);
+
+  const polyFrom = runMeta.hasPolygons        ? "segmentation" : "detection";
+  const polyTo   = runMeta.currentHasPolygons ? "segmentation" : "detection";
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center" }}
+      onClick={updating ? undefined : onCancel}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "28px 28px 24px", width: 420, display: "flex", flexDirection: "column", gap: 16 }}
+      >
+        <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>Update Dataset</div>
+
+        <div style={{ fontSize: 13, color: "var(--text-muted)", lineHeight: 1.6 }}>
+          The following changes have been detected in your asset folders:
+        </div>
+
+        <div style={{ padding: "10px 12px", borderRadius: 6, background: "var(--bg)", border: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 4 }}>
+          {changes.map(c => (
+            <div key={c} style={{ fontSize: 12, fontFamily: "monospace", color: "var(--text)" }}>{c}</div>
+          ))}
+          {changes.length === 0 && (
+            <div style={{ fontSize: 12, color: "var(--text-muted)" }}>annotation type changed</div>
+          )}
+        </div>
+
+        {runMeta.hasPolygonsChanged && (
+          <div style={{ padding: "10px 12px", borderRadius: 6, background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.3)" }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#F59E0B", marginBottom: 4 }}>Annotation type changed</div>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5 }}>
+              Dataset was <strong>{polyFrom}</strong>, annotations are now <strong>{polyTo}</strong>.
+              After updating, start a new run with a matching model type.
+            </div>
+          </div>
+        )}
+
+        <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
+          The current dataset copy will be replaced. This run's weights are not affected.
+        </div>
+
+        <div style={{ display: "flex", gap: 10 }}>
+          <button
+            onClick={onCancel}
+            disabled={updating}
+            style={{ flex: 1, padding: "9px", borderRadius: 7, border: "1px solid var(--border)", background: "transparent", color: "var(--text-muted)", fontSize: 13, cursor: updating ? "not-allowed" : "pointer", fontFamily: "inherit", opacity: updating ? 0.5 : 1 }}
+          >Cancel</button>
+          <button
+            onClick={onConfirm}
+            disabled={updating}
+            style={{ flex: 1, padding: "9px", borderRadius: 7, border: "none", background: updating ? "var(--border)" : "#F59E0B", color: updating ? "var(--text-muted)" : "#fff", fontSize: 13, fontWeight: 600, cursor: updating ? "not-allowed" : "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+          >
+            {updating
+              ? <><span style={{ width: 12, height: 12, border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.8s linear infinite", display: "inline-block" }} /> Copying…</>
+              : "Update Dataset"
+            }
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── RunDetailView ─────────────────────────────────────────────────────────────
 
 interface Props {
@@ -250,10 +344,25 @@ interface Props {
   onStop: () => void;
 }
 
+type RunMetaResult = {
+  found:              boolean;
+  classMap:           string[];
+  imageCount:         number;
+  hasPolygons:        boolean;
+  currentHasPolygons: boolean;
+  hasPolygonsChanged: boolean;
+  newCount:           number;
+  deletedCount:       number;
+  modifiedCount:      number;
+  hasDrift:           boolean;
+};
+
 export default function RunDetailView({ run, progress, onClose, onUpdate, onStartFresh, onResume, onPause, onStop }: Props) {
-  const [lines,          setLines]          = useState<string[]>([]);
-  const [runMeta,        setRunMeta]        = useState<{ found: boolean; classMap: string[]; imageCount: number; newCount: number; modifiedCount: number; hasPolygons: boolean } | null>(null);
-  const [showMetricsInfo, setShowMetricsInfo] = useState(false);
+  const [lines,            setLines]           = useState<string[]>([]);
+  const [runMeta,          setRunMeta]         = useState<RunMetaResult | null>(null);
+  const [showMetricsInfo,  setShowMetricsInfo] = useState(false);
+  const [showUpdateModal,  setShowUpdateModal] = useState(false);
+  const [updating,         setUpdating]        = useState(false);
   const logEndRef = useRef<HTMLDivElement>(null);
 
   const peakRamMB = useMemo(() => { let p = 0; for (const l of lines) { const ev = parseLogLine(l); if (ev?.type === "progress" && ev.ramMB != null) p = Math.max(p, ev.ramMB as number); } return p || null; }, [lines]);
@@ -275,7 +384,7 @@ export default function RunDetailView({ run, progress, onClose, onUpdate, onStar
     getRPC().request.readRunMeta({ outputPath: run.outputPath }).then(setRunMeta).catch(() => {});
   }, [run.id, run.status]);
 
-  const { done, datasetSize, earlyStopTriggered } = parseLog(lines);
+  const { done, datasetSize, earlyStopTriggered, copyProgress } = parseLog(lines);
   const statusColor  = RUN_STATUS_COLORS[run.status];
   const pct          = run.status === "done" ? 100 : progress ? Math.round((progress.epoch / progress.epochs) * 100) : 0;
   const totalEpochs  = progress?.epochs ?? run.epochs;
@@ -326,13 +435,27 @@ export default function RunDetailView({ run, progress, onClose, onUpdate, onStar
           </span>
         }
         actions={<>
-          {(run.status === "idle" || run.status === "done" || run.status === "failed") && (
-            <HeaderBtn onClick={onStartFresh} bg="var(--accent)"><Play size={13} fill="#fff" />{run.status === "idle" ? "Start" : run.status === "done" ? "Start Again" : "Retry"}</HeaderBtn>
-          )}
+          {(run.status === "idle" || run.status === "done" || run.status === "failed") && (() => {
+            const isSeg       = run.baseModel.endsWith("-seg");
+            const mismatch    = runMeta != null && (runMeta.currentHasPolygons !== isSeg);
+            const label       = run.status === "idle" ? "Start" : run.status === "done" ? "Start Again" : "Retry";
+            return <>
+              <HeaderBtn onClick={onStartFresh} bg="var(--accent)"><Play size={13} fill="#fff" />{label}</HeaderBtn>
+              {mismatch && (
+                <span style={{ fontSize: 11, color: "#F59E0B", padding: "4px 10px", borderRadius: 5, border: "1px solid rgba(245,158,11,0.4)", background: "rgba(245,158,11,0.08)", lineHeight: 1.4 }}>
+                  {runMeta!.currentHasPolygons ? "Annotations now have polygons — consider a seg model" : "Annotations are bbox-only — consider a det model"}
+                </span>
+              )}
+            </>;
+          })()}
           {run.status === "paused" && (() => {
-            const modelMismatch = runMeta?.hasPolygons === true && !run.baseModel.endsWith("-seg");
-            return modelMismatch
-              ? <span style={{ fontSize: 11, color: "#F59E0B", padding: "4px 10px", borderRadius: 5, border: "1px solid rgba(245,158,11,0.4)", background: "rgba(245,158,11,0.08)", maxWidth: 260, lineHeight: 1.4 }}>Dataset now has polygons — start a fresh run with a seg model</span>
+            // Resume mismatch is against the stored dataset, not current assets.
+            const isSeg      = run.baseModel.endsWith("-seg");
+            const mismatch   = runMeta?.hasPolygons != null && (runMeta.hasPolygons !== isSeg);
+            return mismatch
+              ? <span style={{ fontSize: 11, color: "#F59E0B", padding: "4px 10px", borderRadius: 5, border: "1px solid rgba(245,158,11,0.4)", background: "rgba(245,158,11,0.08)", maxWidth: 260, lineHeight: 1.4 }}>
+                  {runMeta!.hasPolygons ? "Dataset has polygons — start a fresh run with a seg model" : "Dataset is bbox-only — start a fresh run with a det model"}
+                </span>
               : <HeaderBtn onClick={onResume} bg="#3B82F6"><Play size={13} fill="#fff" /> Resume</HeaderBtn>;
           })()}
           {run.status === "training" && <HeaderBtn onClick={onPause} bg="#F97316"><Pause size={13} fill="#fff" /> Pause</HeaderBtn>}
@@ -352,11 +475,54 @@ export default function RunDetailView({ run, progress, onClose, onUpdate, onStar
         <ConfigStatField label="Classes" value={String(run.classMap.length)} width={58} />
       </div>
 
+      {/* Dataset drift banner */}
+      {runMeta?.found && runMeta.hasDrift && (() => {
+        const canUpdate = run.status === "idle" || run.status === "paused" || run.status === "done" || run.status === "failed";
+        const parts: string[] = [];
+        if (runMeta.newCount     > 0) parts.push(`+${runMeta.newCount} new`);
+        if (runMeta.deletedCount > 0) parts.push(`−${runMeta.deletedCount} deleted`);
+        if (runMeta.modifiedCount > 0) parts.push(`${runMeta.modifiedCount} modified`);
+        if (runMeta.hasPolygonsChanged) parts.push(runMeta.currentHasPolygons ? "bbox → polygon" : "polygon → bbox");
+        return (
+          <div style={{ padding: "8px 20px", background: "rgba(245,158,11,0.07)", borderBottom: "1px solid rgba(245,158,11,0.25)", display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+            <span style={{ fontSize: 11, color: "#F59E0B", flex: 1 }}>
+              Dataset has changed since last Start — {parts.join(", ")}
+            </span>
+            {canUpdate && (
+              <button
+                onClick={() => setShowUpdateModal(true)}
+                style={{ fontSize: 11, fontWeight: 600, padding: "4px 12px", borderRadius: 5, border: "1px solid rgba(245,158,11,0.5)", background: "rgba(245,158,11,0.12)", color: "#F59E0B", cursor: "pointer", flexShrink: 0, fontFamily: "inherit" }}
+              >
+                Update Dataset
+              </button>
+            )}
+          </div>
+        );
+      })()}
+
       {/* Main: chart (left) + metrics (right) */}
       <div style={{ flex: 1, display: "grid", gridTemplateColumns: "1fr 280px", gap: 0, overflow: "hidden" }}>
 
         {/* Left: chart + terminal */}
         <div style={{ display: "flex", flexDirection: "column", overflow: "hidden", borderRight: "1px solid var(--border)" }}>
+
+          {/* Dataset copy progress — shown during the copy phase before training starts */}
+          {copyProgress && copyProgress.done < copyProgress.total && (
+            <div style={{ padding: "10px 20px", background: "rgba(59,130,246,0.06)", borderBottom: "1px solid var(--border)", flexShrink: 0, display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: "var(--accent)" }}>Copying dataset…</span>
+                  <span style={{ fontSize: 11, fontFamily: "monospace", color: "var(--text-muted)" }}>{copyProgress.done} / {copyProgress.total}</span>
+                </div>
+                <div style={{ height: 4, borderRadius: 2, background: "var(--border)" }}>
+                  <div style={{
+                    height: "100%", borderRadius: 2, background: "var(--accent)", transition: "width 0.3s ease",
+                    width: `${Math.round((copyProgress.done / copyProgress.total) * 100)}%`,
+                  }} />
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Loss chart */}
           <div style={{ padding: "16px 20px", background: "var(--surface)", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
@@ -510,15 +676,15 @@ export default function RunDetailView({ run, progress, onClose, onUpdate, onStar
                 </div>
               )}
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                <span style={mutedText}>Annotated images</span>
+                <span style={mutedText}>Images in dataset</span>
                 <span style={{ fontSize: 11, fontFamily: "monospace", fontWeight: 700, color: "var(--text)" }}>{runMeta.imageCount}</span>
               </div>
-              {(runMeta.newCount > 0 || runMeta.modifiedCount > 0) && (
-                <div style={{ fontSize: 11, color: "#F59E0B", marginBottom: 8, lineHeight: 1.5 }}>
-                  {runMeta.newCount > 0 && <div>+{runMeta.newCount} new since this run</div>}
-                  {runMeta.modifiedCount > 0 && <div>~{runMeta.modifiedCount} modified since this run</div>}
-                </div>
-              )}
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                <span style={mutedText}>Type</span>
+                <span style={{ fontSize: 11, fontFamily: "monospace", color: runMeta.hasPolygons ? "#A855F7" : "var(--accent)" }}>
+                  {runMeta.hasPolygons ? "segmentation" : "detection"}
+                </span>
+              </div>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
                 <span style={mutedText}>Classes</span>
                 <span style={{ fontSize: 11, fontFamily: "monospace", color: "var(--text)" }}>{runMeta.classMap.length}</span>
@@ -543,6 +709,28 @@ export default function RunDetailView({ run, progress, onClose, onUpdate, onStar
       </div>
 
       {showMetricsInfo && <MetricsInfoModal onClose={() => setShowMetricsInfo(false)} />}
+
+      {showUpdateModal && runMeta && (
+        <UpdateDatasetModal
+          runMeta={runMeta}
+          updating={updating}
+          onConfirm={async () => {
+            setUpdating(true);
+            try {
+              await getRPC().request.updateDataset({ outputPath: run.outputPath });
+              const fresh = await getRPC().request.readRunMeta({ outputPath: run.outputPath });
+              setRunMeta(fresh as RunMetaResult);
+            } catch (err) {
+              console.error("Failed to update dataset:", err);
+            } finally {
+              setUpdating(false);
+              setShowUpdateModal(false);
+            }
+          }}
+          onCancel={() => setShowUpdateModal(false)}
+        />
+      )}
     </div>
   );
 }
+

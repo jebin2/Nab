@@ -11,19 +11,29 @@ export type LogProgress = {
 export type LogDone  = { mAP50: number; mAP50_95: number; weightsPath: string };
 export type LogError = { message: string };
 
+export type CopyProgress = { done: number; total: number };
+
 export function parseLog(lines: string[]): {
   progress?: LogProgress; done?: LogDone; error?: LogError;
   datasetSize?: number; earlyStopTriggered?: boolean;
+  copyProgress?: CopyProgress;
 } {
   let progress: LogProgress | undefined;
   let done: LogDone | undefined;
   let error: LogError | undefined;
   let datasetSize: number | undefined;
   let earlyStopTriggered = false;
+  let copyProgress: CopyProgress | undefined;
 
   for (const line of lines) {
     const ev = parseLogLine(line);
     if (!ev) continue;
+    if (ev.type === "dataset_copy_start") {
+      copyProgress = { done: 0, total: ev.total as number };
+    }
+    if (ev.type === "dataset_copy_progress") {
+      copyProgress = { done: ev.done as number, total: ev.total as number };
+    }
     if (ev.type === "progress") {
       if (ev.earlyStop) earlyStopTriggered = true;
       progress = {
@@ -45,5 +55,5 @@ export function parseLog(lines: string[]): {
     if (ev.type === "error")   error   = { message: ev.message as string };
   }
 
-  return { progress, done, error, datasetSize, earlyStopTriggered };
+  return { progress, done, error, datasetSize, earlyStopTriggered, copyProgress };
 }
