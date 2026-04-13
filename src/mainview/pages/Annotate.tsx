@@ -74,7 +74,7 @@ export default function Annotate({ asset, onAssetUpdate, onBack }: Props) {
     setCurrentIndex(prev => Math.max(0, Math.min(images.length - 1, prev + delta)));
   }
 
-  useAnnotationKeys(images.length, setTool, navigate, canvasRef);
+  useAnnotationKeys(setTool, navigate, canvasRef);
 
   const annotatedCount = useMemo(
     () => images.filter(i => i.annotations.length > 0).length,
