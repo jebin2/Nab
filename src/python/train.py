@@ -38,6 +38,9 @@ WEIGHTS_SUBDIR  = Path("weights") / "weights"
 CHECKPOINT_FILE = WEIGHTS_SUBDIR / "last.pt"
 MODEL_FILE      = WEIGHTS_SUBDIR / "best.pt"
 
+# Environment variable set when retrying on CPU (configurable).
+CPU_FALLBACK_ENV = os.environ.get("RETICLE_CPU_FALLBACK_ENV", "RETICLE_CPU_FALLBACK")
+
 
 def load_model(base_model: str, checkpoint: Path, resuming: bool, models_dir: Path):
     from ultralytics import YOLO
@@ -87,7 +90,7 @@ def retry_on_cpu(config: dict):
 
     env = dict(os.environ)
     env["CUDA_VISIBLE_DEVICES"] = "-1"
-    env["RETICLE_CPU_FALLBACK"] = "1"
+    env[CPU_FALLBACK_ENV] = "1"
 
     proc = subprocess.Popen(
         [sys.executable, __file__],
@@ -290,7 +293,7 @@ def main():
     except Exception as e:
         if (
             device == "auto" and
-            os.environ.get("RETICLE_CPU_FALLBACK") != "1" and
+            os.environ.get(CPU_FALLBACK_ENV) != "1" and
             is_cuda_unavailable_error(e)
         ):
             emit({"type": "stderr", "text": "[train] CUDA unavailable for auto device; retrying on CPU..."})

@@ -3,6 +3,15 @@
 
 export type NavPage = "overview" | "assets" | "train" | "inference" | "export" | "hub";
 
+export const NavPage = {
+	OVERVIEW: "overview",
+	ASSETS: "assets",
+	TRAIN: "train",
+	INFERENCE: "inference",
+	EXPORT: "export",
+	HUB: "hub",
+} as const;
+
 export interface Asset {
   id: string;
   name: string;
@@ -18,6 +27,24 @@ export interface Asset {
 }
 
 export type RunStatus = "idle" | "installing" | "training" | "paused" | "done" | "failed";
+
+export const RunStatus = {
+	IDLE: "idle",
+	INSTALLING: "installing",
+	TRAINING: "training",
+	PAUSED: "paused",
+	DONE: "done",
+	FAILED: "failed",
+} as const;
+
+export type LoadingState = "idle" | "loading" | "done" | "error";
+
+export const LoadingState = {
+	IDLE: "idle",
+	LOADING: "loading",
+	DONE: "done",
+	ERROR: "error",
+} as const;
 
 export interface TrainingRun {
   id: string;

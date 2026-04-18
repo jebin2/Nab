@@ -1,22 +1,12 @@
 import Electrobun from "electrobun/bun";
-import { readdir, mkdir, copyFile, stat } from "fs/promises";
+import { readdir, mkdir, copyFile } from "fs/promises";
 import { join, extname, basename } from "path";
 import { homedir } from "os";
 import { YOLO_DIR } from "../util";
 import { exp, IMAGE_EXTS, detectHasPolygons } from "../common";
 import { parseYoloLabels, serializeYoloLabels, type AnnotationRecord } from "../yoloLabels";
+import { pathExists, collectImagePaths, sortPathsNumerically } from "../pathUtils";
 
-// ── Dialog path helpers ───────────────────────────────────────────────────────
-
-async function pathExists(p: string): Promise<boolean> {
-	try { await stat(p); return true; } catch { return false; }
-}
-
-/**
- * Electrobun's openFileDialog splits on "," for multi-select, which breaks
- * filenames containing commas. Re-join adjacent parts until we find a path
- * that exists on disk.
- */
 async function fixCommaSplitPaths(parts: string[]): Promise<string[]> {
 	const result: string[] = [];
 	let candidate = "";
@@ -28,17 +18,6 @@ async function fixCommaSplitPaths(parts: string[]): Promise<string[]> {
 		}
 	}
 	return result.length > 0 ? result : parts;
-}
-
-async function collectImagePaths(dir: string): Promise<string[]> {
-	const entries = await readdir(dir, { withFileTypes: true });
-	const results = await Promise.all(entries.map(async entry => {
-		const fullPath = join(dir, entry.name);
-		if (entry.isDirectory()) return collectImagePaths(fullPath);
-		if (IMAGE_EXTS.has(extname(entry.name).toLowerCase())) return [fullPath];
-		return [];
-	}));
-	return results.flat();
 }
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
@@ -63,8 +42,7 @@ export const assetHandlers = {
 		const canceled = !filePaths || filePaths.length === 0 || filePaths[0] === "";
 		if (canceled) return { canceled: true, paths: [] };
 		const [folderPath] = await fixCommaSplitPaths(filePaths);
-		const paths = await collectImagePaths(folderPath);
-		paths.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
+		const paths = sortPathsNumerically(await collectImagePaths(folderPath));
 		return { canceled: false, paths };
 	},
 

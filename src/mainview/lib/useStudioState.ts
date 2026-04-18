@@ -1,58 +1,71 @@
 import { useEffect, useRef, useState } from "react";
 import { getRPC } from "./rpc";
 import { type Asset, type TrainingRun } from "./types";
+import { useToast } from "./useToast";
 
 const SAVE_DEBOUNCE_MS = 250;
 
-export function useStudioState() {
+export function useLoadStudio() {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [runs, setRuns] = useState<TrainingRun[]>([]);
-  const loadedRef = useRef(false);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const savingRef = useRef(false);
-  const pendingPayloadRef = useRef<{ assets: Asset[]; runs: TrainingRun[] } | null>(null);
-
-  async function flushSaveQueue() {
-    if (savingRef.current) return;
-
-    const nextPayload = pendingPayloadRef.current;
-    if (!nextPayload) return;
-
-    savingRef.current = true;
-    pendingPayloadRef.current = null;
-
-    try {
-      await getRPC().request.saveStudio(nextPayload);
-    } catch (err) {
-      console.error("Failed to save studio data:", err);
-    } finally {
-      savingRef.current = false;
-      if (pendingPayloadRef.current) void flushSaveQueue();
-    }
-  }
+  const [loaded, setLoaded] = useState(false);
+  const { showToast } = useToast();
 
   useEffect(() => {
     getRPC().request.loadStudio({}).then(data => {
       setAssets(data.assets);
       setRuns(data.runs);
-      loadedRef.current = true;
+      setLoaded(true);
     }).catch(err => {
       console.error("Failed to load studio data:", err);
-      loadedRef.current = true;
+      showToast("error", "Failed to load studio data");
+      setLoaded(true);
     });
   }, []);
 
-  useEffect(() => {
-    if (!loadedRef.current) return;
+  return { assets, runs, loaded };
+}
 
-    const payload = { assets, runs };
-    pendingPayloadRef.current = payload;
+export function useStudioState() {
+  const { assets: loadedAssets, runs: loadedRuns, loaded } = useLoadStudio();
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [runs, setRuns] = useState<TrainingRun[]>([]);
+
+  useEffect(() => {
+    if (loaded) {
+      setAssets(loadedAssets);
+      setRuns(loadedRuns);
+    }
+  }, [loaded, loadedAssets, loadedRuns]);
+
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savingRef = useRef(false);
+  const pendingRef = useRef<{ assets: Asset[]; runs: TrainingRun[] } | null>(null);
+
+  async function flushSaveQueue() {
+    if (savingRef.current || !pendingRef.current) return;
+
+    savingRef.current = true;
+    const payload = pendingRef.current;
+    pendingRef.current = null;
+
+    try {
+      await getRPC().request.saveStudio(payload);
+    } catch (err) {
+      console.error("Failed to save studio data:", err);
+    } finally {
+      savingRef.current = false;
+      if (pendingRef.current) void flushSaveQueue();
+    }
+  }
+
+  useEffect(() => {
+    if (!loaded) return;
+
+    pendingRef.current = { assets, runs };
 
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-
-    saveTimerRef.current = setTimeout(() => {
-      void flushSaveQueue();
-    }, SAVE_DEBOUNCE_MS);
+    saveTimerRef.current = setTimeout(() => flushSaveQueue(), SAVE_DEBOUNCE_MS);
 
     return () => {
       if (saveTimerRef.current) {
@@ -60,7 +73,7 @@ export function useStudioState() {
         saveTimerRef.current = null;
       }
     };
-  }, [assets, runs]);
+  }, [loaded, assets, runs]);
 
   return { assets, setAssets, runs, setRuns };
 }

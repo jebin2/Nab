@@ -7,7 +7,7 @@ import DeleteConfirmModal from "../components/DeleteConfirmModal";
 import PageLayout from "../components/PageLayout";
 import { type TrainingRun, type Asset } from "../lib/types";
 import { useTrainingRuns } from "../lib/useTrainingRuns";
-import { accentHover, primaryBtn, newItemCard } from "../lib/styleUtils";
+import { primaryBtn } from "../lib/styleUtils";
 
 interface Props {
   assets: Asset[];
@@ -70,8 +70,7 @@ export default function Train({ assets, runs, onRunsChange }: Props) {
 
           <button
             onClick={() => setShowModal(true)}
-            style={newItemCard}
-            {...accentHover}
+            className="new-item-card hover-accent transition-colors"
           >
             <div style={{ width: 36, height: 36, borderRadius: "50%", border: "1.5px dashed currentColor", display: "flex", alignItems: "center", justifyContent: "center" }}>
               <Plus size={16} />

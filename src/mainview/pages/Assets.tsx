@@ -7,7 +7,7 @@ import { Field, inputStyle } from "../components/FormFields";
 import { CLASS_COLORS } from "../lib/constants";
 import { getRPC } from "../lib/rpc";
 import DeleteConfirmModal from "../components/DeleteConfirmModal";
-import { cardHover, accentHover, deleteHover, ghostBtn, primaryBtn, newItemCard, mutedText } from "../lib/styleUtils";
+import { cardHover, deleteHover, ghostBtn, primaryBtn, mutedText } from "../lib/styleUtils";
 
 interface Props {
   assets: Asset[];
@@ -65,8 +65,7 @@ export default function Assets({ assets, runs, onAssetsChange, onOpenAsset }: Pr
 
           <button
             onClick={() => setShowModal(true)}
-            style={newItemCard}
-            {...accentHover}
+            className="new-item-card hover-accent transition-colors"
           >
             <div style={{ width: 36, height: 36, borderRadius: "50%", border: "1.5px dashed currentColor", display: "flex", alignItems: "center", justifyContent: "center" }}>
               <Plus size={16} />

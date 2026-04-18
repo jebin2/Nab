@@ -1,13 +1,10 @@
 import { useState, useEffect } from "react";
-import {
-  Package, GitMerge, Smartphone, Monitor, Cpu,
-  Terminal, CheckCircle, AlertCircle, Download, X, Loader,
-} from "lucide-react";
-import { type TrainingRun } from "../lib/types";
+import { Package, GitMerge, Smartphone, Monitor, Cpu, Terminal, X, Loader, CheckCircle, AlertCircle, Download } from "lucide-react";
 import { getRPC, getBridgeUrl } from "../lib/rpc";
-import CustomSelect from "../components/CustomSelect";
-import Modal from "../components/Modal";
+import { TrainingRun } from "../lib/types";
 import PageLayout from "../components/PageLayout";
+import Modal from "../components/Modal";
+import CustomSelect from "../components/CustomSelect";
 import { iconTile, mutedText, outlineBtn, sectionHeading, surfaceCard } from "../lib/styleUtils";
 
 // ── format definitions ────────────────────────────────────────────────────────
@@ -35,7 +32,7 @@ type DownloadOp =
   | { id: "cli";  label: string; kind: "cli";    outputPath: string; runName: string };
 
 interface DownloadModal {
-  open:     boolean;
+  open:    boolean;
   formatId: string;
   runId:    string;
   label:    string;

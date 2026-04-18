@@ -5,3 +5,4 @@ dist/
 .env.local
 *.log
 artifacts/
+src/python/__pycache__/
