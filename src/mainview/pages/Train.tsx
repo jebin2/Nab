@@ -4,9 +4,10 @@ import { RunCard, type RunAction } from "../components/RunCard";
 import RunDetailView from "../components/RunDetailView";
 import NewRunModal from "../components/NewRunModal";
 import DeleteConfirmModal from "../components/DeleteConfirmModal";
+import PageLayout from "../components/PageLayout";
 import { type TrainingRun, type Asset } from "../lib/types";
 import { useTrainingRuns } from "../lib/useTrainingRuns";
-import { accentHover, pageHeader, primaryBtn, newItemCard } from "../lib/styleUtils";
+import { accentHover, primaryBtn, newItemCard } from "../lib/styleUtils";
 
 interface Props {
   assets: Asset[];
@@ -38,17 +39,17 @@ export default function Train({ assets, runs, onRunsChange }: Props) {
   }
 
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg)" }}>
-
-      <div style={pageHeader}>
-        <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", letterSpacing: "-0.3px" }}>Train</span>
+    <PageLayout
+      title="Train"
+      headerAction={
         <button
           onClick={() => setShowModal(true)}
           style={primaryBtn}
         >
           <Plus size={14} /> New Run
         </button>
-      </div>
+      }
+    >
 
       <div style={{ flex: 1, overflowY: "auto", padding: "24px 28px" }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 }}>
@@ -98,6 +99,6 @@ export default function Train({ assets, runs, onRunsChange }: Props) {
           onCancel={() => setDeleteTarget(null)}
         />
       )}
-    </div>
+    </PageLayout>
   );
 }

@@ -1,11 +1,13 @@
 import { useState } from "react";
 import { Plus, Trash2, FolderOpen, Tag, Image } from "lucide-react";
+import Modal from "../components/Modal";
+import PageLayout from "../components/PageLayout";
 import { type Asset, type TrainingRun } from "../lib/types";
 import { Field, inputStyle } from "../components/FormFields";
 import { CLASS_COLORS } from "../lib/constants";
 import { getRPC } from "../lib/rpc";
 import DeleteConfirmModal from "../components/DeleteConfirmModal";
-import { cardHover, accentHover, deleteHover, pageHeader, primaryBtn, newItemCard, mutedText } from "../lib/styleUtils";
+import { cardHover, accentHover, deleteHover, ghostBtn, primaryBtn, newItemCard, mutedText } from "../lib/styleUtils";
 
 interface Props {
   assets: Asset[];
@@ -36,18 +38,17 @@ export default function Assets({ assets, runs, onAssetsChange, onOpenAsset }: Pr
   }
 
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg)" }}>
-
-      {/* Header */}
-      <div style={pageHeader}>
-        <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", letterSpacing: "-0.3px" }}>Assets</span>
+    <PageLayout
+      title="Assets"
+      headerAction={
         <button
           onClick={() => setShowModal(true)}
           style={primaryBtn}
         >
           <Plus size={14} /> New Asset
         </button>
-      </div>
+      }
+    >
 
       {/* Grid */}
       <div style={{ flex: 1, overflowY: "auto", padding: "24px 28px" }}>
@@ -93,7 +94,7 @@ export default function Assets({ assets, runs, onAssetsChange, onOpenAsset }: Pr
           onCancel={() => setDeleteTarget(null)}
         />
       )}
-    </div>
+    </PageLayout>
   );
 }
 
@@ -257,95 +258,78 @@ function NewAssetModal({ assets, runs, onClose, onCreate }: {
   }
 
   return (
-    <div
-      style={{
-        position: "fixed", inset: 0, zIndex: 100,
-        background: "rgba(0,0,0,0.6)", display: "flex",
-        alignItems: "center", justifyContent: "center",
-      }}
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div style={{
-        width: 420, background: "var(--surface)", borderRadius: 10,
-        border: "1px solid var(--border)", padding: "24px",
-        boxShadow: "0 20px 60px rgba(0,0,0,0.5)",
-      }}>
-        <h2 style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", marginBottom: 20, letterSpacing: "-0.3px" }}>
-          New Asset
-        </h2>
+    <Modal onClose={onClose}>
+      <h2 style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", marginBottom: 20, letterSpacing: "-0.3px" }}>
+        New Asset
+      </h2>
 
-        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <Field label="Asset Name">
-            <input
-              autoFocus
-              value={name}
-              onChange={e => handleNameChange(e.target.value)}
-              placeholder="e.g. Vehicles, PCB Defects"
-              style={{ ...inputStyle, borderColor: nameConflict ? "#EF4444" : undefined }}
-            />
-            {nameConflict && (
-              <div style={{ fontSize: 11, color: "#EF4444", marginTop: 4 }}>
-                Name already used by an asset or run.
-              </div>
-            )}
-          </Field>
-
-          <Field label="Storage Folder">
-            <div style={{ display: "flex", gap: 8 }}>
-              <div style={{ ...inputStyle, flex: 1, fontFamily: "monospace", fontSize: 11, color: "var(--text-muted)" }}>
-                {baseFolder}
-              </div>
-              <button
-                type="button"
-                onClick={pickFolder}
-                disabled={picking}
-                style={{
-                  padding: "0 12px", borderRadius: 6, border: "1px solid var(--border)",
-                  background: "var(--surface-2)", color: "var(--text-muted)",
-                  cursor: picking ? "not-allowed" : "pointer", fontSize: 12, fontFamily: "inherit",
-                  display: "flex", alignItems: "center", gap: 6, flexShrink: 0,
-                }}
-              >
-                <FolderOpen size={13} /> Browse
-              </button>
+      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <Field label="Asset Name">
+          <input
+            autoFocus
+            value={name}
+            onChange={e => handleNameChange(e.target.value)}
+            placeholder="e.g. Vehicles, PCB Defects"
+            style={{ ...inputStyle, borderColor: nameConflict ? "#EF4444" : undefined }}
+          />
+          {nameConflict && (
+            <div style={{ fontSize: 11, color: "#EF4444", marginTop: 4 }}>
+              Name already used by an asset or run.
             </div>
-            {slug && (
-              <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "monospace", marginTop: 5 }}>
-                → {storagePath}
-              </div>
-            )}
-          </Field>
+          )}
+        </Field>
 
-          <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+        <Field label="Storage Folder">
+          <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ ...inputStyle, flex: 1, fontFamily: "monospace", fontSize: 11, color: "var(--text-muted)" }}>
+              {baseFolder}
+            </div>
             <button
               type="button"
-              onClick={onClose}
+              onClick={pickFolder}
+              disabled={picking}
               style={{
-                flex: 1, padding: "9px", borderRadius: 7,
-                border: "1px solid var(--border)", background: "transparent",
-                color: "var(--text-muted)", fontSize: 13, cursor: "pointer", fontFamily: "inherit",
+                padding: "0 12px", borderRadius: 6, border: "1px solid var(--border)",
+                background: "var(--surface-2)", color: "var(--text-muted)",
+                cursor: picking ? "not-allowed" : "pointer", fontSize: 12, fontFamily: "inherit",
+                display: "flex", alignItems: "center", gap: 6, flexShrink: 0,
               }}
             >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={!storagePath || nameConflict}
-              style={{
-                flex: 1, padding: "9px", borderRadius: 7, border: "none",
-                background: storagePath && !nameConflict ? "var(--accent)" : "var(--border)",
-                color: storagePath && !nameConflict ? "#fff" : "var(--text-muted)",
-                fontSize: 13, fontWeight: 600,
-                cursor: storagePath && !nameConflict ? "pointer" : "not-allowed",
-                fontFamily: "inherit",
-              }}
-            >
-              Create Asset
+              <FolderOpen size={13} /> Browse
             </button>
           </div>
-        </form>
-      </div>
-    </div>
+          {slug && (
+            <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "monospace", marginTop: 5 }}>
+              → {storagePath}
+            </div>
+          )}
+        </Field>
+
+        <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+          <button
+            type="button"
+            onClick={onClose}
+            style={ghostBtn}
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={!storagePath || nameConflict}
+            style={{
+              flex: 1, padding: "9px", borderRadius: 7, border: "none",
+              background: storagePath && !nameConflict ? "var(--accent)" : "var(--border)",
+              color: storagePath && !nameConflict ? "#fff" : "var(--text-muted)",
+              fontSize: 13, fontWeight: 600,
+              cursor: storagePath && !nameConflict ? "pointer" : "not-allowed",
+              fontFamily: "inherit",
+            }}
+          >
+            Create Asset
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
