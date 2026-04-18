@@ -4,6 +4,8 @@ import { type TrainingRun } from "../lib/types";
 import { CLASS_COLORS } from "../lib/constants";
 import { getRPC, getBridgeUrl } from "../lib/rpc";
 import CustomSelect from "../components/CustomSelect";
+import PageLayout from "../components/PageLayout";
+import { outlineBtn, panel, sectionHeading, surfaceCard } from "../lib/styleUtils";
 
 // ── types ──────────────────────────────────────────────────────────────────────
 
@@ -164,14 +166,7 @@ export default function Inference({ runs }: Props) {
   const statusLabel = error ? "Error" : inferring ? "Running…" : imageSrc ? "Ready" : "Idle";
 
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", background: "var(--bg)", overflow: "hidden" }}>
-
-      {/* ── Header ── */}
-      <div style={{ height: 56, padding: "0 28px", display: "flex", alignItems: "center", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
-        <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", letterSpacing: "-0.3px" }}>Inference</span>
-      </div>
-
-      {/* ── Main area ── */}
+    <PageLayout title="Inference">
       <div style={{ flex: 1, display: "flex", gap: 16, padding: 16, overflow: "hidden" }}>
 
         {/* ── Left: image area ── */}
@@ -184,12 +179,7 @@ export default function Inference({ runs }: Props) {
           }}>
             <button
               onClick={handleLoadImage}
-              style={{
-                display: "flex", alignItems: "center", gap: 7,
-                padding: "6px 14px", borderRadius: 6, border: "1px solid var(--border)",
-                background: "var(--bg)", color: "var(--text)", fontSize: 13, fontWeight: 500,
-                cursor: "pointer", fontFamily: "inherit",
-              }}
+              style={outlineBtn}
             >
               <Upload size={14} /> Load Image
             </button>
@@ -357,13 +347,9 @@ export default function Inference({ runs }: Props) {
           </Panel>
 
           {/* Detected objects */}
-          <div style={{
-            flex: 1, background: "var(--surface)", border: "1px solid var(--border)",
-            borderRadius: 10, padding: "14px 16px", minHeight: 120,
-            display: "flex", flexDirection: "column",
-          }}>
+          <div style={{ ...surfaceCard, flex: 1, padding: "14px 16px", minHeight: 120, display: "flex", flexDirection: "column" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-              <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-muted)" }}>
+              <span style={sectionHeading}>
                 Detected Objects
               </span>
               <span style={{ fontSize: 10, fontFamily: "monospace", color: "var(--text-muted)" }}>
@@ -472,7 +458,7 @@ export default function Inference({ runs }: Props) {
           </span>
         )}
       </div>
-    </div>
+    </PageLayout>
   );
 }
 
@@ -482,9 +468,9 @@ function Panel({ label, value, children }: {
   label: string; value?: string; children: React.ReactNode;
 }) {
   return (
-    <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 16px" }}>
+    <div style={{ ...panel, borderRadius: 10 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-        <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-muted)" }}>
+        <span style={sectionHeading}>
           {label}
         </span>
         {value && (

@@ -6,7 +6,9 @@ import {
 import { type TrainingRun } from "../lib/types";
 import { getRPC, getBridgeUrl } from "../lib/rpc";
 import CustomSelect from "../components/CustomSelect";
-import { mutedText } from "../lib/styleUtils";
+import Modal from "../components/Modal";
+import PageLayout from "../components/PageLayout";
+import { iconTile, mutedText, outlineBtn, sectionHeading, surfaceCard } from "../lib/styleUtils";
 
 // ── format definitions ────────────────────────────────────────────────────────
 
@@ -104,8 +106,7 @@ export default function Export({ runs }: Props) {
   }
 
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", background: "var(--bg)", overflow: "hidden" }}>
-
+    <PageLayout title="Export">
       {dlModal.open && (
         <DownloadModalOverlay
           label={dlModal.label}
@@ -115,11 +116,6 @@ export default function Export({ runs }: Props) {
           onClose={() => closeDlModal(dlModal)}
         />
       )}
-
-      {/* ── Header ── */}
-      <div style={{ height: 56, padding: "0 28px", display: "flex", alignItems: "center", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
-        <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", letterSpacing: "-0.3px" }}>Export</span>
-      </div>
 
       {/* ── Scrollable content ── */}
       <div style={{ flex: 1, overflowY: "auto", padding: "32px 40px" }}>
@@ -173,15 +169,9 @@ export default function Export({ runs }: Props) {
 
           {/* ── Section 2: CLI Bundle ── */}
           <SectionHeading label="Standalone CLI Bundle" />
-          <div style={{
-            background: "var(--surface)", border: "1px solid var(--border)",
-            borderRadius: 12, padding: "24px 28px", marginBottom: 40,
-          }}>
+          <div style={{ ...surfaceCard, borderRadius: 12, padding: "24px 28px", marginBottom: 40 }}>
             <div style={{ display: "flex", alignItems: "flex-start", gap: 20 }}>
-              <div style={{
-                width: 48, height: 48, borderRadius: 10, background: "var(--bg)",
-                border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-              }}>
+              <div style={{ ...iconTile, width: 48, height: 48, borderRadius: 10 }}>
                 <Terminal size={22} color="var(--accent)" />
               </div>
               <div style={{ flex: 1 }}>
@@ -226,11 +216,7 @@ export default function Export({ runs }: Props) {
 
           {/* ── Footer stats ── */}
           {selectedRun && (
-            <div style={{
-              display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 0,
-              background: "var(--surface)", border: "1px solid var(--border)",
-              borderRadius: 10, overflow: "hidden",
-            }}>
+            <div style={{ ...surfaceCard, display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 0, overflow: "hidden" }}>
               {[
                 { label: "Source Model", value: selectedRun.name },
                 { label: "Base",         value: selectedRun.baseModel },
@@ -248,7 +234,7 @@ export default function Export({ runs }: Props) {
 
         </div>
       </div>
-    </div>
+    </PageLayout>
   );
 }
 
@@ -257,8 +243,7 @@ export default function Export({ runs }: Props) {
 function SectionHeading({ label }: { label: string }) {
   return (
     <div style={{
-      fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em",
-      color: "var(--text-muted)", marginBottom: 12, paddingBottom: 10,
+      ...sectionHeading, marginBottom: 12, paddingBottom: 10,
       borderBottom: "1px solid var(--border)",
     }}>
       {label}
@@ -273,9 +258,10 @@ function DownloadButton({ disabled, onClick }: { disabled: boolean; onClick: () 
       disabled={disabled}
       title="Download"
       style={{
-        display: "flex", alignItems: "center", justifyContent: "center",
         width: 32, height: 32, borderRadius: 6,
-        border: "1px solid var(--border)",
+        ...outlineBtn,
+        padding: 0,
+        gap: 0,
         background: disabled ? "var(--border)" : "var(--bg)",
         color: disabled ? "var(--text-muted)" : "var(--accent)",
         cursor: disabled ? "not-allowed" : "pointer",
@@ -298,18 +284,14 @@ function FormatRow({ fmt, disabled, isLast, onDownload }: {
     <div style={{
       display: "flex", alignItems: "center", gap: 20,
       padding: "20px 24px",
-      background: "var(--surface)",
+      background: surfaceCard.background,
       borderTop: "1px solid var(--border)",
       borderLeft: "1px solid var(--border)",
       borderRight: "1px solid var(--border)",
       borderBottom: isLast ? "1px solid var(--border)" : "none",
       borderRadius: isLast ? "0 0 10px 10px" : "0",
     }}>
-      <div style={{
-        width: 44, height: 44, borderRadius: 8, flexShrink: 0,
-        background: "var(--bg)", border: "1px solid var(--border)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-      }}>
+      <div style={iconTile}>
         <Icon size={20} color="var(--accent)" />
       </div>
 
@@ -343,19 +325,17 @@ function DownloadModalOverlay({ label, status, filename, error, onClose }: {
 }) {
 
   return (
-    <div style={{
-      position: "fixed", inset: 0, zIndex: 1000,
-      background: "rgba(0,0,0,0.55)",
-      display: "flex", alignItems: "center", justifyContent: "center",
-    }}>
+    <Modal width={420} zIndex={1000} onClose={onClose}>
       <div style={{
         position: "relative",
-        background: "var(--surface)", border: "1px solid var(--border)",
-        borderRadius: 14, padding: "40px 44px 36px",
-        minWidth: 300, maxWidth: 420, textAlign: "center",
-        display: "flex", flexDirection: "column", alignItems: "center", gap: 14,
+        padding: "16px 20px 12px",
+        minWidth: 300,
+        textAlign: "center",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: 14,
       }}>
-
         <button
           onClick={onClose}
           style={{
@@ -398,7 +378,6 @@ function DownloadModalOverlay({ label, status, filename, error, onClose }: {
           </>
         )}
       </div>
-
-    </div>
+    </Modal>
   );
 }

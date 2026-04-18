@@ -69,6 +69,12 @@ export const panel: React.CSSProperties = {
   padding: "14px 16px",
 };
 
+export const surfaceCard: React.CSSProperties = {
+  background: "var(--surface)",
+  border: "1px solid var(--border)",
+  borderRadius: 10,
+};
+
 export const sectionLabel: React.CSSProperties = {
   fontSize: 10,
   fontWeight: 800,
@@ -76,6 +82,14 @@ export const sectionLabel: React.CSSProperties = {
   letterSpacing: "0.12em",
   color: "var(--text-muted)",
   marginBottom: 12,
+};
+
+export const sectionHeading: React.CSSProperties = {
+  fontSize: 11,
+  fontWeight: 700,
+  textTransform: "uppercase",
+  letterSpacing: "0.1em",
+  color: "var(--text-muted)",
 };
 
 export const statusBadge = (color: string): React.CSSProperties => ({
@@ -161,6 +175,34 @@ export const ghostBtn: React.CSSProperties = {
   fontSize: 13,
   cursor: "pointer",
   fontFamily: "inherit",
+};
+
+export const outlineBtn: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 7,
+  padding: "6px 14px",
+  borderRadius: 6,
+  border: "1px solid var(--border)",
+  background: "var(--bg)",
+  color: "var(--text)",
+  fontSize: 13,
+  fontWeight: 500,
+  cursor: "pointer",
+  fontFamily: "inherit",
+};
+
+export const iconTile: React.CSSProperties = {
+  width: 44,
+  height: 44,
+  borderRadius: 8,
+  flexShrink: 0,
+  background: "var(--bg)",
+  border: "1px solid var(--border)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
 };
 
 export const newItemCard: React.CSSProperties = {
