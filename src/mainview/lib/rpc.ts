@@ -3,155 +3,191 @@
 
 import { type Asset, type TrainingRun } from "./types";
 
+type EmptyParams = Record<string, never>;
+type EmptyResponse = Record<string, never>;
 type StudioData = { assets: Asset[]; runs: TrainingRun[] };
+type BridgeConfig = { port: number; token: string };
+type DialogPathsResult = { canceled: boolean; paths: string[] };
+type DialogPathResult = { canceled: boolean; path: string };
+type ImageFile = { filename: string; filePath: string };
+type LabelPoint = { x: number; y: number };
+type AnnotationRecord = {
+  classIndex: number;
+  cx: number;
+  cy: number;
+  w: number;
+  h: number;
+  points?: LabelPoint[];
+};
+type AssetLabels = Record<string, AnnotationRecord[]>;
+type LoadAssetDataParams = { storagePath: string };
+type LoadAssetDataResponse = { images: ImageFile[]; labels: AssetLabels; classes: string[] };
+type SaveAnnotationsParams = { storagePath: string; labels: AssetLabels; classes: string[] };
+type ImportImageFile = { filename: string; sourcePath?: string; dataUrl?: string };
+type ImportImagesParams = { storagePath: string; files: ImportImageFile[] };
+type ImportImagesResponse = { images: ImageFile[] };
+type StartTrainingParams = {
+  id: string;
+  name: string;
+  assetPaths: string[];
+  classMap: string[];
+  baseModel: string;
+  epochs: number;
+  batchSize: number;
+  imgsz: number;
+  device: string;
+  outputPath: string;
+  fresh: boolean;
+};
+type OutputPathParams = { outputPath: string };
+type LinesResponse = { lines: string[] };
+type RunMetaResponse = {
+  found: boolean;
+  classMap: string[];
+  imageCount: number;
+  hasPolygons: boolean;
+  currentHasPolygons: boolean;
+  hasPolygonsChanged: boolean;
+  newCount: number;
+  deletedCount: number;
+  modifiedCount: number;
+  hasDrift: boolean;
+};
+type UpdateDatasetResponse = { imageCount: number; hasPolygons: boolean; previousHasPolygons: boolean };
+type StopTrainingParams = { runId: string; clearCheckpoint?: boolean; outputPath?: string };
+type ExportModelParams = { outputPath: string; format: string };
+type ExportResult = { exportedPath: string; fileSize: number; error: string | null };
+type CliBuildParams = { outputPath: string; runName: string; runId: string };
+type CliBuildResult = { filePath: string; filename: string; error: string | null };
+type ExportCliParams = { outputPath: string; runName: string; destDir: string; runId: string };
+type ExportCliResult = { bundlePath: string; error: string | null };
+type DownloadExportParams = { outputPath: string; format: string; runName: string; runId: string };
+type DownloadFileResult = { savedPath: string; error: string | null };
+type CheckWeightsParams = { outputPaths: string[] };
+type InferenceDetection = {
+  classIndex: number;
+  label: string;
+  confidence: number;
+  cx: number;
+  cy: number;
+  w: number;
+  h: number;
+};
+type RunInferenceParams = { imagePath: string; outputPath: string; confidence: number };
+type RunInferenceResponse = {
+  detections: InferenceDetection[];
+  inferenceMs: number;
+  error: string | null;
+};
+type StartHubPushParams = { outputPath: string; repoId: string; token: string; runName: string };
+type StartHubPushResponse = { jobId: string };
 
 type RPCSchema = {
   bun: {
     requests: {
       getBridgeConfig: {
-        params:   Record<string, never>;
-        response: { port: number; token: string };
+        params: EmptyParams;
+        response: BridgeConfig;
       };
       loadStudio: {
-        params:   Record<string, never>;
+        params: EmptyParams;
         response: StudioData;
       };
       saveStudio: {
-        params:   StudioData;
-        response: Record<string, never>;
+        params: StudioData;
+        response: EmptyResponse;
       };
       openImagesDialog: {
-        params:   Record<string, never>;
-        response: { canceled: boolean; paths: string[] };
+        params: EmptyParams;
+        response: DialogPathsResult;
       };
       openFolderDialog: {
-        params:   Record<string, never>;
-        response: { canceled: boolean; paths: string[] };
+        params: EmptyParams;
+        response: DialogPathsResult;
       };
       openFolderPathDialog: {
-        params:   Record<string, never>;
-        response: { canceled: boolean; path: string };
+        params: EmptyParams;
+        response: DialogPathResult;
       };
       loadAssetData: {
-        params:   { storagePath: string };
-        response: {
-          images:  Array<{ filename: string; filePath: string }>;
-          labels:  Record<string, Array<{ classIndex: number; cx: number; cy: number; w: number; h: number; points?: Array<{ x: number; y: number }> }>>;
-          classes: string[];
-        };
+        params: LoadAssetDataParams;
+        response: LoadAssetDataResponse;
       };
       saveAnnotations: {
-        params: {
-          storagePath: string;
-          labels:  Record<string, Array<{ classIndex: number; cx: number; cy: number; w: number; h: number; points?: Array<{ x: number; y: number }> }>>;
-          classes: string[];
-        };
-        response: Record<string, never>;
+        params: SaveAnnotationsParams;
+        response: EmptyResponse;
       };
       ensureDir: {
-        params:   { path: string };
-        response: Record<string, never>;
+        params: { path: string };
+        response: EmptyResponse;
       };
       importImages: {
-        params: {
-          storagePath: string;
-          files: Array<{ filename: string; sourcePath?: string; dataUrl?: string }>;
-        };
-        response: { images: Array<{ filename: string; filePath: string }> };
+        params: ImportImagesParams;
+        response: ImportImagesResponse;
       };
       startTraining: {
-        params: {
-          id:         string;
-          name:       string;
-          assetPaths: string[];
-          classMap:   string[];
-          baseModel:  string;
-          epochs:     number;
-          batchSize:  number;
-          imgsz:      number;
-          device:     string;
-          outputPath: string;
-          fresh:      boolean;
-        };
+        params: StartTrainingParams;
         response: { started: boolean };
       };
       readTrainingLog: {
-        params:   { outputPath: string };
-        response: { lines: string[] };
+        params: OutputPathParams;
+        response: LinesResponse;
       };
       readRunMeta: {
-        params:   { outputPath: string };
-        response: {
-          found:               boolean;
-          classMap:            string[];
-          imageCount:          number;
-          hasPolygons:         boolean;
-          currentHasPolygons:  boolean;
-          hasPolygonsChanged:  boolean;
-          newCount:            number;
-          deletedCount:        number;
-          modifiedCount:       number;
-          hasDrift:            boolean;
-        };
+        params: OutputPathParams;
+        response: RunMetaResponse;
       };
       updateDataset: {
-        params:   { outputPath: string };
-        response: { imageCount: number; hasPolygons: boolean; previousHasPolygons: boolean };
+        params: OutputPathParams;
+        response: UpdateDatasetResponse;
       };
       stopTraining: {
-        params:   { runId: string; clearCheckpoint?: boolean; outputPath?: string };
-        response: Record<string, never>;
+        params: StopTrainingParams;
+        response: EmptyResponse;
       };
       exportModel: {
-        params:   { outputPath: string; format: string };
-        response: { exportedPath: string; fileSize: number; error: string | null };
+        params: ExportModelParams;
+        response: ExportResult;
       };
       buildAndDownloadCLI: {
-        params:   { outputPath: string; runName: string; runId: string };
-        response: { filePath: string; filename: string; error: string | null };
+        params: CliBuildParams;
+        response: CliBuildResult;
       };
       exportCLI: {
-        params:   { outputPath: string; runName: string; destDir: string; runId: string };
-        response: { bundlePath: string; error: string | null };
+        params: ExportCliParams;
+        response: ExportCliResult;
       };
       cancelExport: {
-        params:   { runId: string };
-        response: Record<string, never>;
+        params: { runId: string };
+        response: EmptyResponse;
       };
       downloadExport: {
-        params:   { outputPath: string; format: string; runName: string; runId: string };
-        response: { filePath: string; filename: string; error: string | null };
+        params: DownloadExportParams;
+        response: CliBuildResult;
       };
       downloadFile: {
-        params:   { srcPath: string };
-        response: { savedPath: string; error: string | null };
+        params: { srcPath: string };
+        response: DownloadFileResult;
       };
       deleteFolder: {
-        params:   { folderPath: string };
-        response: Record<string, never>;
+        params: { folderPath: string };
+        response: EmptyResponse;
       };
       checkWeights: {
-        params:   { outputPaths: string[] };
+        params: CheckWeightsParams;
         response: { results: Record<string, boolean> };
       };
       runInference: {
-        params: { imagePath: string; outputPath: string; confidence: number };
-        response: {
-          detections: Array<{
-            classIndex: number; label: string; confidence: number;
-            cx: number; cy: number; w: number; h: number;
-          }>;
-          inferenceMs: number;
-          error: string | null;
-        };
+        params: RunInferenceParams;
+        response: RunInferenceResponse;
       };
       startHubPush: {
-        params:   { outputPath: string; repoId: string; token: string; runName: string };
-        response: { jobId: string };
+        params: StartHubPushParams;
+        response: StartHubPushResponse;
       };
       readHubLog: {
-        params:   { jobId: string };
-        response: { lines: string[] };
+        params: { jobId: string };
+        response: LinesResponse;
       };
     };
     messages: {};
@@ -169,7 +205,7 @@ type RPC = {
 };
 
 let _rpc: RPC | null = null;
-let _bridgeConfig: { port: number; token: string } | null = null;
+let _bridgeConfig: BridgeConfig | null = null;
 
 export function getBridgeUrl(filePath: string): string {
   if (!_bridgeConfig) throw new Error("RPC not initialized");

@@ -9,8 +9,27 @@ export function useStudioState() {
   const [runs, setRuns] = useState<TrainingRun[]>([]);
   const loadedRef = useRef(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const saveSeqRef = useRef(0);
-  const latestQueuedSeqRef = useRef(0);
+  const savingRef = useRef(false);
+  const pendingPayloadRef = useRef<{ assets: Asset[]; runs: TrainingRun[] } | null>(null);
+
+  async function flushSaveQueue() {
+    if (savingRef.current) return;
+
+    const nextPayload = pendingPayloadRef.current;
+    if (!nextPayload) return;
+
+    savingRef.current = true;
+    pendingPayloadRef.current = null;
+
+    try {
+      await getRPC().request.saveStudio(nextPayload);
+    } catch (err) {
+      console.error("Failed to save studio data:", err);
+    } finally {
+      savingRef.current = false;
+      if (pendingPayloadRef.current) void flushSaveQueue();
+    }
+  }
 
   useEffect(() => {
     getRPC().request.loadStudio({}).then(data => {
@@ -27,17 +46,12 @@ export function useStudioState() {
     if (!loadedRef.current) return;
 
     const payload = { assets, runs };
-    const saveSeq = ++saveSeqRef.current;
-    latestQueuedSeqRef.current = saveSeq;
+    pendingPayloadRef.current = payload;
 
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
 
     saveTimerRef.current = setTimeout(() => {
-      getRPC().request.saveStudio(payload).catch(err => {
-        if (latestQueuedSeqRef.current === saveSeq) {
-          console.error("Failed to save studio data:", err);
-        }
-      });
+      void flushSaveQueue();
     }, SAVE_DEBOUNCE_MS);
 
     return () => {

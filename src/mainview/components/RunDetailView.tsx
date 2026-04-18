@@ -1,16 +1,17 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState } from "react";
 import { Play, Pause, Square, Terminal, Info } from "lucide-react";
 import DetailPageHeader, { HeaderBtn } from "./DetailPageHeader";
 import { type TrainingRun } from "../lib/types";
 import { RUN_STATUS_LABELS, RUN_STATUS_COLORS, CLASS_COLORS } from "../lib/constants";
 import { getRPC } from "../lib/rpc";
-import { parseLog, type LogProgress } from "../lib/trainLog";
+import { type LogProgress } from "../lib/trainLog";
 import { parseLogLine } from "../lib/logParser";
 import { panel, sectionLabel, statusBadge, mutedText } from "../lib/styleUtils";
 import LogPanel from "./LogPanel";
 import RunConfigStrip from "./RunConfigStrip";
 import TrainingMetricsHelpModal from "./TrainingMetricsHelpModal";
 import DatasetUpdateModal, { type DatasetUpdateMeta } from "./DatasetUpdateModal";
+import { useRunDetailState } from "./useRunDetailState";
 
 // ── MemoryBar ─────────────────────────────────────────────────────────────────
 
@@ -82,70 +83,29 @@ interface Props {
 }
 
 export default function RunDetailView({ run, progress, onClose, onUpdate, onStartFresh, onResume, onPause, onStop }: Props) {
-  const [lines,            setLines]           = useState<string[]>([]);
-  const [runMeta,          setRunMeta]         = useState<DatasetUpdateMeta | null>(null);
   const [showMetricsInfo,  setShowMetricsInfo] = useState(false);
   const [showUpdateModal,  setShowUpdateModal] = useState(false);
   const [updating,         setUpdating]        = useState(false);
-  const logEndRef = useRef<HTMLDivElement>(null);
-
-  const peakRamMB = useMemo(() => { let p = 0; for (const l of lines) { const ev = parseLogLine(l); if (ev?.type === "progress" && ev.ramMB != null) p = Math.max(p, ev.ramMB as number); } return p || null; }, [lines]);
-  const peakGpuMB = useMemo(() => { let p = 0; for (const l of lines) { const ev = parseLogLine(l); if (ev?.type === "progress" && ev.gpuMB != null) p = Math.max(p, ev.gpuMB as number); } return p || null; }, [lines]);
-
-  useEffect(() => {
-    let active = true;
-    async function load() {
-      try { const { lines: l } = await getRPC().request.readTrainingLog({ outputPath: run.outputPath }); if (active) setLines(l); } catch {}
-    }
-    load();
-    const id = setInterval(load, 1000);
-    return () => { active = false; clearInterval(id); };
-  }, [run.id, run.outputPath]);
-
-  useEffect(() => { logEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [lines.length]);
-
-  useEffect(() => {
-    getRPC().request.readRunMeta({ outputPath: run.outputPath }).then(setRunMeta).catch(() => {});
-  }, [run.id, run.status]);
-
-  const { done, datasetSize, earlyStopTriggered, copyProgress } = parseLog(lines);
   const statusColor  = RUN_STATUS_COLORS[run.status];
-  const pct          = run.status === "done" ? 100 : progress ? Math.round((progress.epoch / progress.epochs) * 100) : 0;
-  const totalEpochs  = progress?.epochs ?? run.epochs;
-  const currentEpoch = progress?.epoch  ?? (run.status === "done" ? run.epochs : 0);
-  const mAP50   = done?.mAP50    ?? run.mAP    ?? progress?.mAP ?? null;
-  const mAP5095 = done?.mAP50_95 ?? null;
-
-  // Build per-curve point arrays for box / cls / dfl losses.
-  const { curves, liveDots } = useMemo(() => {
-    type Pt = { epoch: number; loss: number };
-    const box: Pt[] = [], cls: Pt[] = [], dfl: Pt[] = [];
-    for (const line of lines) {
-      const ev = parseLogLine(line);
-      if (!ev || ev.type !== "progress") continue;
-      if (ev.lossBox != null) box.push({ epoch: ev.epoch as number, loss: ev.lossBox as number });
-      if (ev.lossCls != null) cls.push({ epoch: ev.epoch as number, loss: ev.lossCls as number });
-      if (ev.lossDfl != null) dfl.push({ epoch: ev.epoch as number, loss: ev.lossDfl as number });
-    }
-    const allPts = [...box, ...cls, ...dfl];
-    if (allPts.length < 2) return { curves: null, liveDots: null };
-
-    const maxE  = Math.max(...allPts.map(p => p.epoch));
-    const allL  = allPts.map(p => p.loss);
-    const minL  = Math.min(...allL);
-    const rangeL = (Math.max(...allL) - minL) || 1;
-    const toXY  = (p: Pt) => ({ x: (p.epoch / maxE) * 800, y: 200 - ((p.loss - minL) / rangeL) * 160 - 20 });
-    const toStr = (pts: Pt[]) => pts.length < 2 ? "" : pts.map(p => { const {x,y} = toXY(p); return `${x.toFixed(1)},${y.toFixed(1)}`; }).join(" ");
-
-    const live = run.status === "training";
-    const lastXY = (pts: Pt[]) => pts.length > 0 ? toXY(pts[pts.length - 1]) : null;
-    return {
-      curves: { box: toStr(box), cls: toStr(cls), dfl: toStr(dfl) },
-      liveDots: live ? { box: lastXY(box), cls: lastXY(cls), dfl: lastXY(dfl) } : null,
-    };
-  }, [lines, run.status]);
-
-  const editable = run.status === "idle" || run.status === "paused";
+  const {
+    lines,
+    runMeta,
+    setRunMeta,
+    logEndRef,
+    peakRamMB,
+    peakGpuMB,
+    datasetSize,
+    earlyStopTriggered,
+    copyProgress,
+    curves,
+    liveDots,
+    pct,
+    totalEpochs,
+    currentEpoch,
+    mAP50,
+    mAP5095,
+    editable,
+  } = useRunDetailState(run, progress);
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg)" }}>
