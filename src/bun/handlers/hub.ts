@@ -3,7 +3,7 @@ import { join } from "path";
 import {
 	HUB_LOGS_DIR, PUSH_SCRIPT, VENV_PYTHON,
 	prepareEnvironment, streamProcessOutput, coalescePipProgress,
-	runWithPTY, modelPath as getModelPath,
+	runWithPTY, modelPath as getModelPath, safeName,
 } from "../util";
 import { exp, readLogFile } from "../common";
 
@@ -35,8 +35,8 @@ export const hubHandlers = {
 				return;
 			}
 			const proc = Bun.spawn([VENV_PYTHON, PUSH_SCRIPT], { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
-			const safeName = runName.replace(/[^a-zA-Z0-9_-]/g, "_");
-			proc.stdin.write(JSON.stringify({ modelPath: getModelPath(exp(outputPath)), repoId, token, fileName: `${safeName}.pt` }));
+			const safe = safeName(runName);
+			proc.stdin.write(JSON.stringify({ modelPath: getModelPath(exp(outputPath)), repoId, token, fileName: `${safe}.pt` }));
 			proc.stdin.end();
 			await streamProcessOutput(proc, {
 				stdoutHandler: line => log(line),

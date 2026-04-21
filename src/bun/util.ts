@@ -50,6 +50,10 @@ export const runningProcesses = new Map<string, ReturnType<typeof Bun.spawn>>();
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+export function safeName(name: string): string {
+	return name.replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
 export function parseLastJsonLine(stdout: string): Record<string, unknown> | null {
 	const line = stdout.trim().split("\n").filter(Boolean).pop() ?? "";
 	try { return JSON.parse(line); } catch { return null; }

@@ -3,8 +3,8 @@ import { join, extname, basename, dirname } from "path";
 import { homedir, tmpdir } from "os";
 import {
 	CLI_ENTRY, UTIL_ENTRY, INFER_SCRIPT, LOGGER_SCRIPT, YOLO_UTILS_SCRIPT, EXPORT_SCRIPT, VENV_PYTHON,
-	runningProcesses, runProcess, modelPath as getModelPath, streamProcessOutput,
-	coalescePipProgress, parseLastJsonLine,
+	IS_WIN, runningProcesses, runProcess, modelPath as getModelPath, streamProcessOutput,
+	coalescePipProgress, parseLastJsonLine, safeName,
 } from "../util";
 import { exp, readLogFile } from "../common";
 
@@ -73,8 +73,8 @@ export const exportHandlers = {
 		if (!(await Bun.file(modelPath).exists()))
 			return { filePath: "", filename: "", error: "Model weights not found." };
 
-		const safeName   = runName.replace(/[^a-zA-Z0-9_-]/g, "_");
-		const binaryName = `${safeName}-cli${process.platform === "win32" ? ".exe" : ""}`;
+		const safeName   = safeName(runName);
+		const binaryName = `${safeName}-cli${IS_WIN ? ".exe" : ""}`;
 		const outBinary  = join(tmpdir(), binaryName);
 		const buildError = await buildCLIArtifact(modelPath, outBinary, runId);
 		if (buildError) return { filePath: "", filename: "", error: `Compile failed: ${buildError}` };
@@ -89,8 +89,8 @@ export const exportHandlers = {
 		if (!(await Bun.file(modelPath).exists()))
 			return { bundlePath: "", error: "Model weights not found." };
 
-		const safeName  = runName.replace(/[^a-zA-Z0-9_-]/g, "_");
-		const outBinary = join(destDir, `${safeName}-detect${process.platform === "win32" ? ".exe" : ""}`);
+		const safeName  = safeName(runName);
+		const outBinary = join(destDir, `${safeName}-detect${IS_WIN ? ".exe" : ""}`);
 		const buildError = await buildCLIArtifact(modelPath, outBinary, runId);
 		if (buildError) return { bundlePath: "", error: `Compile failed: ${buildError}` };
 
@@ -116,7 +116,7 @@ export const exportHandlers = {
 		const FORMAT_EXT: Record<string, string> = {
 			pt: ".pt", onnx: ".onnx", tflite: ".tflite", coreml: "", openvino: "",
 		};
-		const safeName = runName.replace(/[^a-zA-Z0-9_-]/g, "_");
+		const safeName = safeName(runName);
 
 		(async () => {
 			if (format === "pt") {
