@@ -5,6 +5,8 @@ import { TrainingRun } from "../lib/types";
 import PageLayout from "../components/PageLayout";
 import Modal from "../components/Modal";
 import CustomSelect from "../components/CustomSelect";
+import LogPanel from "../components/LogPanel";
+import { parseLogLine } from "../lib/logParser";
 import { iconTile, mutedText, outlineBtn, sectionHeading, surfaceCard } from "../lib/styleUtils";
 
 // ── format definitions ────────────────────────────────────────────────────────
@@ -32,13 +34,16 @@ type DownloadOp =
   | { id: "cli";  label: string; kind: "cli";    outputPath: string; runName: string };
 
 interface DownloadModal {
-  open:    boolean;
-  formatId: string;
-  runId:    string;
-  label:    string;
-  status:   "loading" | "done" | "error";
-  filename: string;
-  error:    string;
+  open:       boolean;
+  formatId:   string;
+  runId:      string;
+  label:      string;
+  status:     "loading" | "done" | "error";
+  filename:   string;
+  error:      string;
+  outputPath: string;
+  lines:      string[];
+  kind:       "format" | "cli";
 }
 
 interface Props {
@@ -46,7 +51,8 @@ interface Props {
 }
 
 const MODAL_CLOSED: DownloadModal = {
-  open: false, formatId: "", runId: "", label: "", status: "loading", filename: "", error: "",
+  open: false, formatId: "", runId: "", label: "", status: "loading",
+  filename: "", error: "", outputPath: "", lines: [], kind: "format",
 };
 
 // ── component ─────────────────────────────────────────────────────────────────
@@ -70,35 +76,95 @@ export default function Export({ runs }: Props) {
     setDlModal(MODAL_CLOSED);
   }
 
+  useEffect(() => {
+    if (!dlModal.open || dlModal.status !== "loading" || dlModal.kind !== "format") return;
+
+    let active = true;
+
+    const poll = async () => {
+      if (!active) return;
+      try {
+        const { lines } = await getRPC().request.readExportLog({
+          outputPath: dlModal.outputPath,
+          runId: dlModal.runId,
+        });
+        if (!active) return;
+
+        for (const raw of lines) {
+          try {
+            const ev = JSON.parse(raw);
+            if (ev.type === "done") {
+              active = false;
+              try {
+                const url      = getBridgeUrl(ev.filePath);
+                const response = await fetch(url);
+                if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
+                const blob    = await response.blob();
+                const blobUrl = URL.createObjectURL(blob);
+                const a       = document.createElement("a");
+                a.href     = blobUrl;
+                a.download = ev.filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
+                setDlModal(prev => ({ ...prev, status: "done", filename: ev.filename }));
+              } catch (e) {
+                setDlModal(prev => ({ ...prev, status: "error", error: String(e) }));
+              }
+              return;
+            }
+            if (ev.type === "error") {
+              active = false;
+              setDlModal(prev => ({ ...prev, status: "error", error: ev.message }));
+              return;
+            }
+          } catch {}
+        }
+
+        setDlModal(prev => ({ ...prev, lines }));
+      } catch {}
+    };
+
+    poll();
+    const intervalId = setInterval(poll, 1000);
+    return () => {
+      active = false;
+      clearInterval(intervalId);
+    };
+  }, [dlModal.open, dlModal.status, dlModal.kind, dlModal.runId, dlModal.outputPath]);
+
   async function handleDownload(op: DownloadOp) {
     const runId = crypto.randomUUID();
-    setDlModal({ open: true, formatId: op.id, runId, label: op.label, status: "loading", filename: "", error: "" });
-    try {
-      const res = op.kind === "cli"
-        ? await getRPC().request.buildAndDownloadCLI({ outputPath: op.outputPath, runName: op.runName, runId })
-        : await getRPC().request.downloadExport({ outputPath: op.outputPath, format: op.format, runName: op.runName, runId });
-      if (res.error) {
-        setDlModal(prev => ({ ...prev, status: "error", error: res.error! }));
-      } else {
-        // Fetch the file through the bridge server and download it via a blob URL.
-        // We use fetch+blob instead of a direct <a href> because GTKWebKit treats
-        // http:// anchor clicks as navigation events; blob: URLs are handled inline.
-        const url      = getBridgeUrl(res.filePath);
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
-        const blob    = await response.blob();
-        const blobUrl = URL.createObjectURL(blob);
-        const a       = document.createElement("a");
-        a.href     = blobUrl;
-        a.download = res.filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
-        setDlModal(prev => ({ ...prev, status: "done", filename: res.filename }));
+    if (op.kind === "cli") {
+      setDlModal({ open: true, formatId: op.id, runId, label: op.label, status: "loading", filename: "", error: "", outputPath: op.outputPath, lines: [], kind: "cli" });
+      try {
+        const res = await getRPC().request.buildAndDownloadCLI({ outputPath: op.outputPath, runName: op.runName, runId });
+        if (res.error) {
+          setDlModal(prev => ({ ...prev, status: "error", error: res.error! }));
+        } else {
+          const url      = getBridgeUrl(res.filePath);
+          const response = await fetch(url);
+          if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
+          const blob    = await response.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          const a       = document.createElement("a");
+          a.href     = blobUrl;
+          a.download = res.filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
+          setDlModal(prev => ({ ...prev, status: "done", filename: res.filename }));
+        }
+      } catch (e) {
+        setDlModal(prev => ({ ...prev, status: "error", error: String(e) }));
       }
-    } catch (e) {
-      setDlModal(prev => ({ ...prev, status: "error", error: String(e) }));
+    } else {
+      setDlModal({ open: true, formatId: op.id, runId, label: op.label, status: "loading", filename: "", error: "", outputPath: op.outputPath, lines: [], kind: "format" });
+      const { error } = await getRPC().request.startExport({ outputPath: op.outputPath, format: op.format, runName: op.runName, runId });
+      if (error) setDlModal(prev => ({ ...prev, status: "error", error }));
+      // polling via useEffect above
     }
   }
 
@@ -110,6 +176,7 @@ export default function Export({ runs }: Props) {
           status={dlModal.status}
           filename={dlModal.filename}
           error={dlModal.error}
+          lines={dlModal.lines}
           onClose={() => closeDlModal(dlModal)}
         />
       )}
@@ -313,14 +380,23 @@ function FormatRow({ fmt, disabled, isLast, onDownload }: {
   );
 }
 
-function DownloadModalOverlay({ label, status, filename, error, onClose }: {
+function ExportLogLine({ line }: { line: string }) {
+  const ev = parseLogLine(line);
+  if (ev) {
+    if (ev.type === "stderr")  return <div style={{ color: "#F59E0B", marginBottom: 1, opacity: 0.85 }}>{ev.text as string}</div>;
+    if (ev.type === "error")   return <div style={{ color: "#EF4444", marginTop: 4 }}>{ev.message as string}</div>;
+  }
+  return null;
+}
+
+function DownloadModalOverlay({ label, status, filename, error, lines, onClose }: {
   label:    string;
   status:   "loading" | "done" | "error";
   filename: string;
   error:    string;
+  lines:    string[];
   onClose:  () => void;
 }) {
-
   return (
     <Modal width={420} zIndex={1000} onClose={onClose}>
       <div style={{
@@ -351,8 +427,17 @@ function DownloadModalOverlay({ label, status, filename, error, onClose }: {
             <div style={{ animation: "spin 1s linear infinite", display: "flex" }}>
               <Loader size={32} color="var(--accent)" />
             </div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>Downloading…</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>Exporting…</div>
             <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{label}</div>
+            {lines.length > 0 && (
+              <div style={{ width: "100%" }}>
+                <LogPanel
+                  lines={lines}
+                  renderLine={(line, i) => <ExportLogLine key={i} line={line} />}
+                  height={120}
+                />
+              </div>
+            )}
           </>
         )}
 

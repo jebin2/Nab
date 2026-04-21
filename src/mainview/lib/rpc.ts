@@ -61,7 +61,8 @@ type CliBuildParams = { outputPath: string; runName: string; runId: string };
 type CliBuildResult = { filePath: string; filename: string; error: string | null };
 type ExportCliParams = { outputPath: string; runName: string; destDir: string; runId: string };
 type ExportCliResult = { bundlePath: string; error: string | null };
-type DownloadExportParams = { outputPath: string; format: string; runName: string; runId: string };
+type StartExportParams = { outputPath: string; format: string; runName: string; runId: string };
+type ReadExportLogParams = { outputPath: string; runId: string };
 type DownloadFileResult = { savedPath: string; error: string | null };
 type CheckWeightsParams = { outputPaths: string[] };
 type InferenceDetection = {
@@ -161,9 +162,13 @@ type RPCSchema = {
         params: { runId: string };
         response: EmptyResponse;
       };
-      downloadExport: {
-        params: DownloadExportParams;
-        response: CliBuildResult;
+      startExport: {
+        params: StartExportParams;
+        response: { error: string | null };
+      };
+      readExportLog: {
+        params: ReadExportLogParams;
+        response: LinesResponse;
       };
       downloadFile: {
         params: { srcPath: string };

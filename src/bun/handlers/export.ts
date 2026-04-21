@@ -1,11 +1,12 @@
-import { mkdir, copyFile, cp, rm, mkdtemp, stat } from "fs/promises";
+import { appendFile, mkdir, copyFile, cp, rm, mkdtemp, stat } from "fs/promises";
 import { join, extname, basename, dirname } from "path";
 import { homedir, tmpdir } from "os";
 import {
 	INFER_SCRIPT, YOLO_UTILS_SCRIPT, EXPORT_SCRIPT, VENV_PYTHON,
 	runningProcesses, runProcess, modelPath as getModelPath, streamProcessOutput,
+	coalescePipProgress,
 } from "../util";
-import { exp } from "../common";
+import { exp, readLogFile } from "../common";
 
 // Paths to CLI source files — copied into the compile temp dir.
 const CLI_ENTRY  = join(import.meta.dir, "../cli.ts");
@@ -106,55 +107,81 @@ export const exportHandlers = {
 		return {};
 	},
 
-	downloadExport: async ({ outputPath, format, runName, runId }: {
+	startExport: async ({ outputPath, format, runName, runId }: {
 		outputPath: string; format: string; runName: string; runId: string;
 	}) => {
 		const modelPath = getModelPath(exp(outputPath));
 		if (!(await Bun.file(modelPath).exists()))
-			return { filePath: "", filename: "", error: "Model weights not found." };
+			return { error: "Model weights not found." };
 
-		let exportedPath: string;
-
-		if (format === "pt") {
-			exportedPath = modelPath;
-		} else {
-			const { stdout, stderr } = await runProcess([VENV_PYTHON, EXPORT_SCRIPT], {
-				stdinData: JSON.stringify({ modelPath, format }),
-				stderrHandler: async () => {},
-				runId,
-			});
-			const line = stdout.trim().split("\n").filter(Boolean).pop() ?? "";
-			try {
-				const data = JSON.parse(line);
-				if (data.error) return { filePath: "", filename: "", error: data.error };
-				exportedPath = data.exportedPath;
-			} catch {
-				const hint = stderr.trim().split("\n").filter(Boolean).pop() ?? "";
-				return { filePath: "", filename: "", error: `Export failed.${hint ? ` ${hint}` : ""}` };
-			}
-		}
+		const logPath = join(exp(outputPath), `export-${runId}.log`);
+		const log = (line: string) => appendFile(logPath, line + "\n").catch(console.error);
 
 		const FORMAT_EXT: Record<string, string> = {
 			pt: ".pt", onnx: ".onnx", tflite: ".tflite", coreml: "", openvino: "",
 		};
 		const safeName = runName.replace(/[^a-zA-Z0-9_-]/g, "_");
-		const ext      = FORMAT_EXT[format] ?? extname(exportedPath);
-		const destName = ext ? `${safeName}${ext}` : `${safeName}_${format}`;
 
-		const srcStat = await stat(exportedPath);
-		if (srcStat.isDirectory()) {
-			const parent   = dirname(exportedPath);
-			const dirName  = basename(exportedPath);
-			const zipPath  = join(parent, `${dirName}.zip`);
-			const proc     = Bun.spawn(["zip", "-r", "-q", zipPath, dirName], { cwd: parent, stdout: "pipe", stderr: "pipe" });
-			runningProcesses.set(runId, proc);
-			const exitCode = await proc.exited;
-			runningProcesses.delete(runId);
-			if (exitCode !== 0) return { filePath: "", filename: "", error: "Failed to create zip archive for export." };
-			return { filePath: zipPath, filename: `${destName}.zip`, error: null };
-		}
+		(async () => {
+			if (format === "pt") {
+				await log(JSON.stringify({ type: "done", filePath: modelPath, filename: `${safeName}.pt` }));
+				return;
+			}
 
-		return { filePath: exportedPath, filename: destName, error: null };
+			const pipLogger = coalescePipProgress(async (text: string) =>
+				log(JSON.stringify({ type: "stderr", text }))
+			);
+
+			const { stdout } = await runProcess([VENV_PYTHON, EXPORT_SCRIPT], {
+				stdinData: JSON.stringify({ modelPath, format }),
+				stderrHandler: pipLogger,
+				collectStdout: true,
+				collectStderr: false,
+				runId,
+			});
+
+			const line = stdout.trim().split("\n").filter(Boolean).pop() ?? "";
+			let exportedPath: string;
+			try {
+				const data = JSON.parse(line);
+				if (data.error) {
+					await log(JSON.stringify({ type: "error", message: data.error }));
+					return;
+				}
+				exportedPath = data.exportedPath;
+			} catch {
+				await log(JSON.stringify({ type: "error", message: "Export failed: unexpected output from export script." }));
+				return;
+			}
+
+			const ext      = FORMAT_EXT[format] ?? extname(exportedPath);
+			const destName = ext ? `${safeName}${ext}` : `${safeName}_${format}`;
+
+			const srcStat = await stat(exportedPath);
+			if (srcStat.isDirectory()) {
+				const parent  = dirname(exportedPath);
+				const dirName = basename(exportedPath);
+				const zipPath = join(parent, `${dirName}.zip`);
+				const proc    = Bun.spawn(["zip", "-r", "-q", zipPath, dirName], { cwd: parent, stdout: "pipe", stderr: "pipe" });
+				runningProcesses.set(runId, proc);
+				const exitCode = await proc.exited;
+				runningProcesses.delete(runId);
+				if (exitCode !== 0) {
+					await log(JSON.stringify({ type: "error", message: "Failed to create zip archive for export." }));
+					return;
+				}
+				await log(JSON.stringify({ type: "done", filePath: zipPath, filename: `${destName}.zip` }));
+				return;
+			}
+
+			await log(JSON.stringify({ type: "done", filePath: exportedPath, filename: destName }));
+		})();
+
+		return { error: null };
+	},
+
+	readExportLog: async ({ outputPath, runId }: { outputPath: string; runId: string }) => {
+		return { lines: await readLogFile(join(exp(outputPath), `export-${runId}.log`)) };
 	},
 
 	downloadFile: async ({ srcPath }: { srcPath: string }) => {

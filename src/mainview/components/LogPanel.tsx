@@ -27,6 +27,8 @@ export default function LogPanel({
       style={{
         height,
         overflowY: "auto",
+        overflowX: "hidden",
+        wordBreak: "break-all",
         padding: "12px 16px",
         border: "1px solid #2E2E2E",
         borderRadius: 8,

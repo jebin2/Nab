@@ -31,10 +31,12 @@ def ensure_deps(fmt: str):
     deps = FORMAT_DEPS.get(fmt, [])
     if not deps:
         return
+    print(f"[export] Installing {fmt} dependencies...", file=sys.stderr, flush=True)
     subprocess.run(
-        [sys.executable, "-m", "pip", "install", "--quiet", "--upgrade", *deps],
+        [sys.executable, "-m", "pip", "install", "--progress-bar", "raw", *deps],
         check=True,
     )
+    print("[export] Dependencies ready.", file=sys.stderr, flush=True)
 
 
 def silence_ultralytics():
@@ -73,6 +75,7 @@ def main():
         sys.exit(1)
 
     try:
+        print(f"[export] Exporting model to {fmt}...", file=sys.stderr, flush=True)
         exported_path = model.export(format=fmt)
     except Exception as e:
         emit({"exportedPath": "", "error": f"Export failed: {e}"})
