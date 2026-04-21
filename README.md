@@ -47,8 +47,7 @@ When creating a training run, Nab inspects every selected asset's annotations an
 |---|---|---|
 | Bounding boxes only | Detection (`yolo*n/s/m/l/x`) | Det model list shown; seg models hidden |
 | Polygons only | Segmentation (`yolo*n/s/m/l/x-seg`) | Seg model list shown; det models hidden |
-| Mix — some bbox, some polygon | User chooses | Warning shown; toggle to pick det or seg |
-| Unknown (annotated before polygon tracking) | User chooses | Same warning and toggle as mixed |
+| Mix — some bbox, some polygon | Segmentation | Warning shown; seg model selected automatically |
 
 ### Start / Resume / Refresh
 
@@ -63,4 +62,4 @@ When creating a training run, Nab inspects every selected asset's annotations an
 
 ### Dataset on Resume
 
-The asset folders are rescanned on every Resume, so the dataset reflects whatever is on disk at that moment — new images are included, deleted or emptied ones are dropped. The class map is preserved from the original run.
+Resume uses the existing dataset copy as-is — no rescan. The images and labels that were copied when the run was last started are reused unchanged. To pick up annotation edits or new images, use the **Update Dataset** button (visible when drift is detected) before resuming, or start a fresh run.

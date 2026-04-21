@@ -46,7 +46,7 @@ export default function NewRunModal({ assets, runs, onClose, onCreate }: Props) 
   // Determine annotation mode from selected assets.
   // "seg"     — all selected assets have polygons
   // "det"     — all selected assets are bbox-only (hasPolygons === false)
-  // "mixed"   — some bbox-only, some polygon (known types differ)
+  // "mixed"   — some bbox-only, some polygon; treated as seg (polygons take precedence)
   // "unknown" — at least one asset has hasPolygons undefined (annotated before tracking)
   const annotationMode = useMemo<"seg" | "det" | "mixed" | "unknown">(() => {
     const sel = assets.filter(a => selectedAssets.includes(a.id) && a.annotatedCount > 0);
@@ -59,13 +59,13 @@ export default function NewRunModal({ assets, runs, onClose, onCreate }: Props) 
     return anyPoly ? "seg" : "det";
   }, [assets, selectedAssets]);
 
-  // Models available for the current mode. In mixed/unknown the user chooses.
-  const [mixedChoice, setMixedChoice] = useState<"seg" | "det">("det");
+  // Models available for the current mode. Mixed forces seg; unknown lets the user choose.
+  const [unknownChoice, setUnknownChoice] = useState<"seg" | "det">("det");
   const availableModels = useMemo(() => {
-    if (annotationMode === "seg") return BASE_MODELS_SEG;
+    if (annotationMode === "seg" || annotationMode === "mixed") return BASE_MODELS_SEG;
     if (annotationMode === "det") return BASE_MODELS_DET;
-    return mixedChoice === "seg" ? BASE_MODELS_SEG : BASE_MODELS_DET;
-  }, [annotationMode, mixedChoice]);
+    return unknownChoice === "seg" ? BASE_MODELS_SEG : BASE_MODELS_DET;
+  }, [annotationMode, unknownChoice]);
 
   // Derive the effective model: if the stored baseModel is no longer in the
   // available list (e.g. mode switched from seg→det), fall back to the first
@@ -163,29 +163,31 @@ export default function NewRunModal({ assets, runs, onClose, onCreate }: Props) 
           )}
 
           {/* Annotation mode notice — shown when mode is ambiguous or mixed */}
-          {(annotationMode === "mixed" || annotationMode === "unknown") && selectedAssets.length > 0 && (
+          {annotationMode === "mixed" && selectedAssets.length > 0 && (
             <div style={{ padding: "10px 12px", borderRadius: 6, background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.3)" }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "#F59E0B", marginBottom: 6 }}>
-                {annotationMode === "mixed"
-                  ? "Mixed annotation types detected"
-                  : "Annotation type unknown"}
+              <div style={{ fontSize: 12, fontWeight: 600, color: "#F59E0B", marginBottom: 4 }}>Mixed annotation types detected</div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5 }}>
+                Some assets use bounding boxes, others have polygons. Segmentation model selected automatically.
               </div>
+            </div>
+          )}
+          {annotationMode === "unknown" && selectedAssets.length > 0 && (
+            <div style={{ padding: "10px 12px", borderRadius: 6, background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.3)" }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "#F59E0B", marginBottom: 6 }}>Annotation type unknown</div>
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 10, lineHeight: 1.5 }}>
-                {annotationMode === "mixed"
-                  ? "Some assets use bounding boxes only, others have polygon annotations. Choose which model type to train:"
-                  : "Some assets were annotated before polygon tracking was added. Choose which model type matches your annotations:"}
+                Some assets were annotated before polygon tracking was added. Choose which model type matches your annotations:
               </div>
               <div style={{ display: "flex", gap: 8 }}>
                 {(["seg", "det"] as const).map(choice => (
                   <button
                     key={choice}
                     type="button"
-                    onClick={() => { setMixedChoice(choice); }}
+                    onClick={() => { setUnknownChoice(choice); }}
                     style={{
                       padding: "5px 14px", borderRadius: 5, fontSize: 12, fontWeight: 600,
-                      border: `1px solid ${mixedChoice === choice ? "#F59E0B" : "var(--border)"}`,
-                      background: mixedChoice === choice ? "rgba(245,158,11,0.15)" : "var(--bg)",
-                      color: mixedChoice === choice ? "#F59E0B" : "var(--text-muted)",
+                      border: `1px solid ${unknownChoice === choice ? "#F59E0B" : "var(--border)"}`,
+                      background: unknownChoice === choice ? "rgba(245,158,11,0.15)" : "var(--bg)",
+                      color: unknownChoice === choice ? "#F59E0B" : "var(--text-muted)",
                       cursor: "pointer", fontFamily: "inherit",
                     }}
                   >
