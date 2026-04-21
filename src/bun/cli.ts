@@ -19,6 +19,7 @@ import { YOLO_DIR, runInference } from "./util";
 // `with { type: "file" }` tells Bun to embed the file and gives back a path.
 import modelPtPath from "./model.pt" with { type: "file" };
 import inferPyPath from "./infer.py" with { type: "file" };
+import loggerPyPath from "./logger.py" with { type: "file" };
 import yoloUtilsPyPath from "./yolo_utils.py" with { type: "file" };
 
 // ── Arg parsing ───────────────────────────────────────────────────────────────
@@ -68,6 +69,7 @@ if (!existsSync(modelPath)) {
 const inferDir = await mkdtemp(join(tmpdir(), "nab-infer-"));
 const inferPyTmpPath = join(inferDir, "infer.py");
 await writeFile(inferPyTmpPath, await Bun.file(inferPyPath).text());
+await writeFile(join(inferDir, "logger.py"), await Bun.file(loggerPyPath).text());
 await writeFile(join(inferDir, "yolo_utils.py"), await Bun.file(yoloUtilsPyPath).text());
 
 // ── Run inference (same util function as the desktop app) ─────────────────────

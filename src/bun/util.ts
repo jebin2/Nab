@@ -18,6 +18,7 @@ export const CLI_ENTRY         = join(import.meta.dir, "cli.ts");
 export const UTIL_ENTRY        = join(import.meta.dir, "util.ts");
 export const TRAIN_SCRIPT      = join(import.meta.dir, "../python/train.py");
 export const INFER_SCRIPT      = join(import.meta.dir, "../python/infer.py");
+export const LOGGER_SCRIPT     = join(import.meta.dir, "../python/logger.py");
 export const EXPORT_SCRIPT     = join(import.meta.dir, "../python/export.py");
 export const YOLO_UTILS_SCRIPT = join(import.meta.dir, "../python/yolo_utils.py");
 export const PUSH_SCRIPT       = join(import.meta.dir, "../python/push_to_hub.py");

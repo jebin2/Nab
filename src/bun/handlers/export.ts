@@ -2,7 +2,7 @@ import { appendFile, mkdir, copyFile, cp, rm, mkdtemp, stat } from "fs/promises"
 import { join, extname, basename, dirname } from "path";
 import { homedir, tmpdir } from "os";
 import {
-	CLI_ENTRY, UTIL_ENTRY, INFER_SCRIPT, YOLO_UTILS_SCRIPT, EXPORT_SCRIPT, VENV_PYTHON,
+	CLI_ENTRY, UTIL_ENTRY, INFER_SCRIPT, LOGGER_SCRIPT, YOLO_UTILS_SCRIPT, EXPORT_SCRIPT, VENV_PYTHON,
 	runningProcesses, runProcess, modelPath as getModelPath, streamProcessOutput,
 	coalescePipProgress,
 } from "../util";
@@ -18,6 +18,7 @@ async function buildCLIArtifact(modelPath: string, outBinary: string, runId: str
 		await copyFile(UTIL_ENTRY, join(buildDir, "util.ts"));
 		await copyFile(modelPath, join(buildDir, "model.pt"));
 		await copyFile(INFER_SCRIPT, join(buildDir, "infer.py"));
+		await copyFile(LOGGER_SCRIPT, join(buildDir, "logger.py"));
 		await copyFile(YOLO_UTILS_SCRIPT, join(buildDir, "yolo_utils.py"));
 
 		const proc = Bun.spawn(
