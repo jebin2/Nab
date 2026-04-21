@@ -88,8 +88,14 @@ export const trainingHandlers = {
 		device: string; outputPath: string; fresh: boolean;
 	}) => {
 		// Guard: prevent multiple concurrent training runs for the same ID.
-		if (runningProcesses.has(config.id)) {
-			return { started: false };
+		// If the tracked process has already exited, clean it up and allow a new start.
+		const existing = runningProcesses.get(config.id);
+		if (existing) {
+			if (existing.exitCode !== null) {
+				runningProcesses.delete(config.id);
+			} else {
+				return { started: false };
+			}
 		}
 		await mkdir(exp(config.outputPath), { recursive: true });
 		if (config.fresh) {
@@ -178,7 +184,7 @@ export const trainingHandlers = {
 			stdoutHandler: line => appendFile(logPath, line + "\n").catch(console.error),
 			stderrHandler: text =>
 				appendFile(logPath, JSON.stringify({ type: "stderr", text }) + "\n").catch(console.error),
-		}).then(() => runningProcesses.delete(config.id)).catch(console.error);
+		}).catch(console.error).finally(() => runningProcesses.delete(config.id));
 
 		return { started: true };
 	},
