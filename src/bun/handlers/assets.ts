@@ -2,7 +2,7 @@ import Electrobun from "electrobun/bun";
 import { readdir, mkdir, copyFile } from "fs/promises";
 import { join, extname, basename } from "path";
 import { homedir } from "os";
-import { YOLO_DIR } from "../util";
+import { YOLO_DIR, IS_WIN } from "../util";
 import { exp, IMAGE_EXTS, detectHasPolygons } from "../common";
 import { parseYoloLabels, serializeYoloLabels, type AnnotationRecord } from "../yoloLabels";
 import { pathExists, collectImagePaths, sortPathsNumerically } from "../pathUtils";
@@ -24,8 +24,11 @@ async function fixCommaSplitPaths(parts: string[]): Promise<string[]> {
 
 export const assetHandlers = {
 	openImagesDialog: async () => {
+		// On Windows the native dialog doesn't understand the "*.ext,..." glob format,
+		// so we omit the filter and let the user pick any file.
 		const filePaths = await Electrobun.Utils.openFileDialog({
-			startingFolder: homedir(), allowedFileTypes: "*.jpg,*.jpeg,*.png,*.webp,*.bmp,*.gif,*.tiff,*.tif",
+			startingFolder: homedir(),
+			...(IS_WIN ? {} : { allowedFileTypes: "*.jpg,*.jpeg,*.png,*.webp,*.bmp,*.gif,*.tiff,*.tif" }),
 			canChooseFiles: true, canChooseDirectory: false, allowsMultipleSelection: true,
 		});
 		const canceled = !filePaths || filePaths.length === 0 || filePaths[0] === "";
