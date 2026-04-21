@@ -33,7 +33,8 @@ export type LogEvent =
   | { type: "stderr";  text: string }
   | { type: "dataset"; imageCount: number }
   | { type: "dataset_copy_start";    total: number }
-  | { type: "dataset_copy_progress"; done: number; total: number };
+  | { type: "dataset_copy_progress"; done: number; total: number }
+  | { type: "start"; timestamp: string; config?: Record<string, unknown> };
 
 /**
  * Parse a single log line. Returns the parsed event when the line is valid

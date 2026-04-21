@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Package, GitMerge, Smartphone, Monitor, Cpu, Terminal, X, Loader, CheckCircle, AlertCircle, Download } from "lucide-react";
 import { getRPC, getBridgeUrl } from "../lib/rpc";
 import { TrainingRun } from "../lib/types";
