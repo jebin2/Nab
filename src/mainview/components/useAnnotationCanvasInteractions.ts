@@ -1,4 +1,4 @@
-import { useEffect, type MutableRefObject } from "react";
+import { useEffect, useRef, type MutableRefObject } from "react";
 import { type AnnotateTool, type BBox, clampBBox, clampPt, pointsToBbox } from "../lib/annotationTypes";
 import { hitAnnotation, hitCorner, hitVertex, MIN_BOX_PX, POLYGON_CLOSE_RADIUS, ZOOM_WHEEL_IN, type ImageSize, type Point } from "./annotationCanvasUtils";
 
@@ -37,6 +37,8 @@ interface Params {
   applyZoomAtPoint: (factor: number, pivotX: number, pivotY: number) => void;
 }
 
+const COORD_THROTTLE_MS = 100;
+
 export function useAnnotationCanvasInteractions({
   canvasRef,
   annotationsRef,
@@ -69,6 +71,7 @@ export function useAnnotationCanvasInteractions({
   imageToYolo,
   applyZoomAtPoint,
 }: Params) {
+  const lastCoordsUpdateRef = useRef(0);
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.code === "Space") {
@@ -256,8 +259,12 @@ export function useAnnotationCanvasInteractions({
 
     function onMouseMove(event: MouseEvent) {
       const pos = canvasPos(event);
-      const imagePos = canvasToImage(pos.x, pos.y);
-      onCoordsChangeRef.current(Math.round(imagePos.x), Math.round(imagePos.y));
+      const now = Date.now();
+      if (now - lastCoordsUpdateRef.current >= COORD_THROTTLE_MS) {
+        lastCoordsUpdateRef.current = now;
+        const imagePos = canvasToImage(pos.x, pos.y);
+        onCoordsChangeRef.current(Math.round(imagePos.x), Math.round(imagePos.y));
+      }
 
       if (dragModeRef.current === "pan") {
         const dx = pos.x - dragStartPosRef.current.x;

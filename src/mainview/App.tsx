@@ -12,7 +12,7 @@ import Export    from "./pages/Export";
 import PushHub   from "./pages/PushHub";
 import { useStudioState } from "./lib/useStudioState";
 
-export default function App() {
+function Content() {
   const [activePage, setActivePage]   = useState<NavPage>("overview");
   const [activeAsset, setActiveAsset] = useState<Asset | null>(null);
   const { assets, setAssets, runs, setRuns } = useStudioState();
@@ -33,34 +33,41 @@ export default function App() {
   }
 
   return (
+    <>
+      <Sidebar activePage={activePage} onNavigate={navigate} />
+      <main style={{ flex: 1, overflow: "hidden", display: "flex" }}>
+        <ErrorBoundary key={activePage} page={activePage}>
+          {activePage === "overview"  && <Overview assets={assets} runs={runs} onNavigate={navigate} />}
+          {activePage === "assets"    && !activeAsset && (
+            <Assets
+              assets={assets}
+              runs={runs}
+              onAssetsChange={setAssets}
+              onOpenAsset={openAsset}
+            />
+          )}
+          {activePage === "assets"    && activeAsset && (
+            <Annotate
+              asset={activeAsset}
+              onAssetUpdate={handleAssetUpdate}
+              onBack={() => setActiveAsset(null)}
+            />
+          )}
+          {activePage === "train"     && <Train assets={assets} runs={runs} onRunsChange={setRuns} />}
+          {activePage === "inference" && <Inference runs={runs} />}
+          {activePage === "export"    && <Export runs={runs} />}
+          {activePage === "hub"       && <PushHub runs={runs} />}
+        </ErrorBoundary>
+      </main>
+    </>
+  );
+}
+
+export default function App() {
+  return (
     <ToastProvider>
       <div style={{ display: "flex", height: "100vh", width: "100vw", overflow: "hidden" }}>
-        <Sidebar activePage={activePage} onNavigate={navigate} />
-
-        <main style={{ flex: 1, overflow: "hidden", display: "flex" }}>
-          <ErrorBoundary key={activePage} page={activePage}>
-            {activePage === "overview"  && <Overview assets={assets} runs={runs} onNavigate={navigate} />}
-            {activePage === "assets"    && !activeAsset && (
-              <Assets
-                assets={assets}
-                runs={runs}
-                onAssetsChange={setAssets}
-                onOpenAsset={openAsset}
-              />
-            )}
-            {activePage === "assets"    && activeAsset && (
-              <Annotate
-                asset={activeAsset}
-                onAssetUpdate={handleAssetUpdate}
-                onBack={() => setActiveAsset(null)}
-              />
-            )}
-            {activePage === "train"     && <Train assets={assets} runs={runs} onRunsChange={setRuns} />}
-            {activePage === "inference" && <Inference runs={runs} />}
-            {activePage === "export"    && <Export runs={runs} />}
-            {activePage === "hub"       && <PushHub runs={runs} />}
-          </ErrorBoundary>
-        </main>
+        <Content />
       </div>
     </ToastProvider>
   );

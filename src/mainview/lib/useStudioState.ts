@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { getRPC } from "./rpc";
 import { type Asset, type TrainingRun } from "./types";
-import { useToast } from "./useToast";
 
 const SAVE_DEBOUNCE_MS = 250;
 
@@ -9,7 +8,6 @@ export function useLoadStudio() {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [runs, setRuns] = useState<TrainingRun[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const { showToast } = useToast();
 
   useEffect(() => {
     getRPC().request.loadStudio({}).then(data => {
@@ -18,7 +16,6 @@ export function useLoadStudio() {
       setLoaded(true);
     }).catch(err => {
       console.error("Failed to load studio data:", err);
-      showToast("error", "Failed to load studio data");
       setLoaded(true);
     });
   }, []);

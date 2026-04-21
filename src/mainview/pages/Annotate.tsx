@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo } from "react";
+import { useState, useRef, useMemo, useCallback } from "react";
 import {
   ChevronLeft, ChevronRight, SkipForward,
   Maximize2, Hand, Square, Lasso, ZoomIn, ZoomOut, Trash2,
@@ -80,6 +80,10 @@ export default function Annotate({ asset, onAssetUpdate, onBack }: Props) {
     () => images.filter(i => i.annotations.length > 0).length,
     [images],
   );
+
+  const handleCoordsChange = useCallback((x: number, y: number) => {
+    setCoords({ x, y });
+  }, []);
 
   // ── toolbar handlers ──────────────────────────────────────────────────────
 
@@ -190,7 +194,7 @@ export default function Annotate({ asset, onAssetUpdate, onBack }: Props) {
                 onAnnotationsChange={updateAnnotations}
                 onSelect={setSelectedId}
                 onZoomChange={setZoom}
-                onCoordsChange={(x, y) => setCoords({ x, y })}
+                onCoordsChange={handleCoordsChange}
               />
 
               {/* Bottom toolbar */}
@@ -201,8 +205,8 @@ export default function Annotate({ asset, onAssetUpdate, onBack }: Props) {
                 display: "flex", alignItems: "center",
                 justifyContent: "center", gap: 2, padding: "0 12px",
               }}>
-                <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "monospace", marginRight: "auto" }}>
-                  {zoom}% · {coords.x}, {coords.y}
+                <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "monospace", marginRight: "auto", minWidth: 120, textAlign: "right", display: "inline-block" }}>
+                  {zoom}% · {coords.x.toString().padStart(4, ' ')}, {coords.y.toString().padStart(4, ' ')}
                 </span>
 
                 {TOOLBAR.map((entry, i) => {

@@ -6,20 +6,21 @@ import { initRPC } from "./lib/rpc";
 
 const root = createRoot(document.getElementById("root")!);
 
-initRPC()
-  .then(() => {
-    root.render(
-      <StrictMode>
-        <App />
-      </StrictMode>
-    );
-  })
+function renderApp() {
+  root.render(
+    <StrictMode>
+      <App />
+    </StrictMode>
+  );
+}
+
+const timeout = new Promise<never>((_, reject) =>
+  setTimeout(() => reject(new Error("RPC init timed out")), 5000)
+);
+
+Promise.race([initRPC(), timeout])
+  .then(renderApp)
   .catch(err => {
     console.error("RPC init failed:", err);
-    // Render anyway so the window isn't blank
-    root.render(
-      <StrictMode>
-        <App />
-      </StrictMode>
-    );
+    renderApp();
   });
