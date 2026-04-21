@@ -80,7 +80,9 @@ export function useTrainingRuns(
       updateRun(
         run.id,
         result.started ? { status: "training" } : { status: "failed", updatedAt: "just now" },
-        ["installing"],
+        // Allow failed→training: the poller may have read a stale error from the
+        // old log during the brief window before the backend cleared it.
+        result.started ? ["installing", "failed"] : ["installing"],
       );
     } catch (err) {
       console.error("Failed to start training:", err);

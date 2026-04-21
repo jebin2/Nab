@@ -28,6 +28,11 @@ export function parseLog(lines: string[]): {
   for (const line of lines) {
     const ev = parseLogLine(line);
     if (!ev) continue;
+    if (ev.type === "start") {
+      // New session — discard terminal states from any previous session in this log.
+      done = undefined;
+      error = undefined;
+    }
     if (ev.type === "dataset_copy_start") {
       copyProgress = { done: 0, total: ev.total };
     }
