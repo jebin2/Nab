@@ -5,9 +5,9 @@
   !define MUI_UNICON "${ICON_PATH}"
 !endif
 
-Name "Reticle"
-OutFile "Reticle-Windows.exe"
-InstallDir "$LOCALAPPDATA\Reticle"
+Name "Nab"
+OutFile "Nab-Windows.exe"
+InstallDir "$LOCALAPPDATA\Nab"
 RequestExecutionLevel user
 ShowInstDetails show
 
@@ -19,12 +19,12 @@ Section "Install"
   File /r "setup_extracted\*"
 
   ; Run electrobun setup
-  nsExec::ExecToLog '"$INSTDIR\Reticle-Setup.exe"'
+  nsExec::ExecToLog '"$INSTDIR\Nab-Setup.exe"'
 
-  CreateShortcut "$DESKTOP\Reticle.lnk" \
-    "$LOCALAPPDATA\reticle.app\stable\app\bin\launcher.exe" \
+  CreateShortcut "$DESKTOP\Nab.lnk" \
+    "$LOCALAPPDATA\nab.app\stable\app\bin\launcher.exe" \
     "" "$INSTDIR\installer-icon.ico" 0
-  CreateShortcut "$SMPROGRAMS\Reticle.lnk" \
-    "$LOCALAPPDATA\reticle.app\stable\app\bin\launcher.exe" \
+  CreateShortcut "$SMPROGRAMS\Nab.lnk" \
+    "$LOCALAPPDATA\nab.app\stable\app\bin\launcher.exe" \
     "" "$INSTDIR\installer-icon.ico" 0
 SectionEnd
