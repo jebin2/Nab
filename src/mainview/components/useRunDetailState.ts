@@ -67,7 +67,7 @@ export function useRunDetailState(run: TrainingRun, progress?: LogProgress) {
   };
 }
 
-function getPeakUsage(lines: string[], metric: "ramMB" | "gpuMB"): number | null {
+export function getPeakUsage(lines: string[], metric: "ramMB" | "gpuMB"): number | null {
   let peak = 0;
   for (const line of lines) {
     const event = parseLogLine(line);
