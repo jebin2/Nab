@@ -90,9 +90,12 @@ console.log(`\n✓  ${detections.length} object(s) detected in ${inferenceMs}ms\
 for (const d of detections)
 	console.log(`   ${d.label.padEnd(20)} ${(d.confidence * 100).toFixed(1)}%`);
 
+const jsonOut = JSON.stringify({ imagePath, inferenceMs, detections }, null, 2);
+console.log("\n" + jsonOut);
+
 // ── Save JSON output if requested ─────────────────────────────────────────────
 
 if (outputPath) {
-	await writeFile(outputPath, JSON.stringify({ imagePath, inferenceMs, detections }, null, 2));
+	await writeFile(outputPath, jsonOut);
 	console.log(`\nDetections saved → ${outputPath}`);
 }
