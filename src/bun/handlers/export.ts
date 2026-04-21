@@ -2,15 +2,12 @@ import { appendFile, mkdir, copyFile, cp, rm, mkdtemp, stat } from "fs/promises"
 import { join, extname, basename, dirname } from "path";
 import { homedir, tmpdir } from "os";
 import {
-	INFER_SCRIPT, YOLO_UTILS_SCRIPT, EXPORT_SCRIPT, VENV_PYTHON,
+	CLI_ENTRY, UTIL_ENTRY, INFER_SCRIPT, YOLO_UTILS_SCRIPT, EXPORT_SCRIPT, VENV_PYTHON,
 	runningProcesses, runProcess, modelPath as getModelPath, streamProcessOutput,
 	coalescePipProgress,
 } from "../util";
 import { exp, readLogFile } from "../common";
 
-// Paths to CLI source files — copied into the compile temp dir.
-const CLI_ENTRY  = join(import.meta.dir, "../cli.ts");
-const UTIL_ENTRY = join(import.meta.dir, "../util.ts");
 
 async function buildCLIArtifact(modelPath: string, outBinary: string, runId: string): Promise<string | null> {
 	const buildDir = await mkdtemp(join(tmpdir(), "nab-cli-"));
