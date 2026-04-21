@@ -20,9 +20,11 @@ function MemoryBar({ label, valueMB, peakMB, color }: { label: string; valueMB: 
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
       <span style={mutedText}>{label}</span>
-      <div style={{ textAlign: "right" }}>
-        <span style={{ fontSize: 12, fontFamily: "monospace", fontWeight: 700, color }}>{fmt(valueMB)}</span>
-        {peakMB > valueMB && <div style={{ fontSize: 10, fontFamily: "monospace", color: "var(--text-muted)" }}>↑ {fmt(peakMB)}</div>}
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={{ fontSize: 10, fontFamily: "monospace", color: "var(--text-muted)", width: 58, textAlign: "right" }}>
+          {peakMB > valueMB ? `↑ ${fmt(peakMB)}` : ""}
+        </span>
+        <span style={{ fontSize: 12, fontFamily: "monospace", fontWeight: 700, color, width: 58, textAlign: "right" }}>{fmt(valueMB)}</span>
       </div>
     </div>
   );
@@ -322,7 +324,18 @@ export default function RunDetailView({ run, progress, onClose, onUpdate, onStar
 
           {(progress?.ramMB != null || progress?.gpuMB != null) && (
             <div style={panel}>
-              <div style={sectionLabel}>Memory</div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", ...sectionLabel }}>
+                <span>Memory</span>
+                <span style={{
+                  fontSize: 10, fontWeight: 700, fontFamily: "monospace",
+                  padding: "2px 7px", borderRadius: 4,
+                  background: progress?.gpuMB != null ? "rgba(167,139,250,0.12)" : "rgba(99,102,241,0.12)",
+                  color:      progress?.gpuMB != null ? "#A78BFA" : "var(--accent)",
+                  border:     `1px solid ${progress?.gpuMB != null ? "rgba(167,139,250,0.3)" : "rgba(99,102,241,0.3)"}`,
+                }}>
+                  {progress?.gpuMB != null ? "GPU" : "CPU"}
+                </span>
+              </div>
               {progress?.ramMB != null && <MemoryBar label="RAM" valueMB={progress.ramMB} peakMB={peakRamMB ?? progress.ramMB} color="var(--accent)" />}
               {progress?.gpuMB != null && <MemoryBar label="GPU" valueMB={progress.gpuMB} peakMB={peakGpuMB ?? progress.gpuMB} color="#A78BFA" />}
             </div>
