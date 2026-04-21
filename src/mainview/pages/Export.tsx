@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Package, GitMerge, Smartphone, Monitor, Cpu, Terminal, X, Loader, CheckCircle, AlertCircle, Download } from "lucide-react";
-import { getRPC, getBridgeUrl } from "../lib/rpc";
+import { getRPC, getBridgeUrl, getBridgeConfig } from "../lib/rpc";
 import { TrainingRun } from "../lib/types";
 import PageLayout from "../components/PageLayout";
 import Modal from "../components/Modal";
@@ -21,13 +21,20 @@ interface FormatDef {
   Icon:  React.ElementType;
 }
 
-const FORMATS: FormatDef[] = [
+const ALL_FORMATS: FormatDef[] = [
   { id: "pt",       label: "PyTorch (.pt)",      desc: "Full precision floating point weights. Best for fine-tuning and retraining.",                                  Icon: Package    },
   { id: "onnx",     label: "ONNX (.onnx)",        desc: "Universal interoperability format. Highly optimized for CPU inference.",                                       Icon: GitMerge   },
   { id: "tflite",   label: "TFLite (.tflite)",    desc: "Mobile deployment. Quantized to INT8 for edge devices.",          note: "First export installs deps (~50 MB)", Icon: Smartphone },
   { id: "coreml",   label: "CoreML",               desc: "Optimized for Apple Neural Engine (ANE). macOS/iOS only.",                                                    Icon: Monitor    },
   { id: "openvino", label: "OpenVINO",            desc: "Intel hardware acceleration. Optimized for Intel CPUs and GPUs.", note: "First export installs deps (~30 MB)", Icon: Cpu        },
 ];
+
+// Filter out CoreML on Windows (not supported) - computed once at module level after RPC init
+let _formats: FormatDef[] | null = null;
+function getFormats(isWindows: boolean): FormatDef[] {
+  if (!_formats) _formats = ALL_FORMATS.filter(f => f.id !== "coreml" || !isWindows);
+  return _formats;
+}
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
@@ -64,10 +71,15 @@ export default function Export({ runs }: Props) {
 
   const [selectedRunId, setSelectedRunId] = useState<string | null>(doneRuns[0]?.id ?? null);
   const [dlModal,       setDlModal]       = useState<DownloadModal>(MODAL_CLOSED);
+  const [isWindows,     setIsWindows]     = useState(false);
 
   useEffect(() => {
     if (!selectedRunId && doneRuns.length > 0) setSelectedRunId(doneRuns[0].id);
   }, [runs]);
+
+  useEffect(() => {
+    try { setIsWindows(getBridgeConfig().isWindows); } catch {}
+  }, []);
 
   const selectedRun = doneRuns.find(r => r.id === selectedRunId) ?? null;
 
@@ -176,12 +188,12 @@ export default function Export({ runs }: Props) {
           {/* ── Section 1: Format Export ── */}
           <SectionHeading label="Model Format Export" />
           <div style={{ marginBottom: 40, display: "flex", flexDirection: "column", gap: 0 }}>
-            {FORMATS.map((fmt, i) => (
+            {getFormats(isWindows).map((fmt, i) => (
               <FormatRow
                 key={fmt.id}
                 fmt={fmt}
                 disabled={!selectedRun || (dlModal.open && dlModal.formatId === fmt.id)}
-                isLast={i === FORMATS.length - 1}
+                isLast={i === getFormats(isWindows).length - 1}
                 onDownload={() => handleDownload({ id: fmt.id, label: fmt.label, kind: "format", outputPath: selectedRun!.outputPath, format: fmt.id, runName: selectedRun!.name })}
               />
             ))}

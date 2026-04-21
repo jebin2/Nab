@@ -1,6 +1,6 @@
 import Electrobun, { BrowserWindow, defineElectrobunRPC, Screen } from "electrobun/bun";
 import { randomBytes } from "crypto";
-import { runningProcesses } from "./util";
+import { runningProcesses, IS_WIN } from "./util";
 import { assetHandlers }    from "./handlers/assets";
 import { trainingHandlers } from "./handlers/training";
 import { inferenceHandlers } from "./handlers/inference";
@@ -27,13 +27,13 @@ const server = Bun.serve({
 	},
 });
 
-// ── RPC ───────────────────────────────────────────────────────────────────────
+// ── RPC ─────────────────────────────────────────────────────────────────────
 
 const rpc = defineElectrobunRPC("bun", {
 	maxRequestTime: Infinity,
 	handlers: {
 		requests: {
-			getBridgeConfig: async () => ({ port: server.port, token: securityToken }),
+			getBridgeConfig: async () => ({ port: server.port, token: securityToken, isWindows: IS_WIN }),
 			...assetHandlers,
 			...trainingHandlers,
 			...inferenceHandlers,

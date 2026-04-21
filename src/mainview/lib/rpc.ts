@@ -6,7 +6,7 @@ import { type Asset, type TrainingRun } from "./types";
 type EmptyParams = Record<string, never>;
 type EmptyResponse = Record<string, never>;
 type StudioData = { assets: Asset[]; runs: TrainingRun[] };
-type BridgeConfig = { port: number; token: string };
+type BridgeConfig = { port: number; token: string; isWindows: boolean };
 type DialogPathsResult = { canceled: boolean; paths: string[] };
 type DialogPathResult = { canceled: boolean; path: string };
 type ImageFile = { filename: string; filePath: string };
@@ -236,4 +236,9 @@ export async function initRPC(): Promise<void> {
   });
   _rpc = electroview.rpc as RPC;
   _bridgeConfig = await _rpc.request.getBridgeConfig({});
+}
+
+export function getBridgeConfig(): BridgeConfig {
+  if (!_bridgeConfig) throw new Error("RPC not initialized");
+  return _bridgeConfig;
 }
