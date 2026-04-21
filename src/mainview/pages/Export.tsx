@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Package, GitMerge, Smartphone, Monitor, Cpu, Terminal, X, Loader, CheckCircle, AlertCircle, Download } from "lucide-react";
 import { getRPC, getBridgeUrl } from "../lib/rpc";
 import { TrainingRun } from "../lib/types";
@@ -8,6 +8,7 @@ import CustomSelect from "../components/CustomSelect";
 import LogPanel from "../components/LogPanel";
 import { parseLogLine } from "../lib/logParser";
 import { downloadBlobFile } from "../lib/downloadUtils";
+import { useLogPoller } from "../lib/useLogPoller";
 import { iconTile, mutedText, outlineBtn, sectionHeading, surfaceCard } from "../lib/styleUtils";
 
 // ── format definitions ────────────────────────────────────────────────────────
@@ -77,52 +78,28 @@ export default function Export({ runs }: Props) {
     setDlModal(MODAL_CLOSED);
   }
 
-  useEffect(() => {
-    if (!dlModal.open || dlModal.status !== "loading" || dlModal.kind !== "format") return;
-
-    let active = true;
-
-    const poll = async () => {
-      if (!active) return;
-      try {
-        const { lines } = await getRPC().request.readExportLog({
-          outputPath: dlModal.outputPath,
-          runId: dlModal.runId,
-        });
-        if (!active) return;
-
-        for (const raw of lines) {
-          try {
-            const ev = JSON.parse(raw);
-            if (ev.type === "done") {
-              active = false;
-              try {
-                await downloadBlobFile(getBridgeUrl(ev.filePath), ev.filename);
-                setDlModal(prev => ({ ...prev, status: "done", filename: ev.filename }));
-              } catch (e) {
-                setDlModal(prev => ({ ...prev, status: "error", error: String(e) }));
-              }
-              return;
-            }
-            if (ev.type === "error") {
-              active = false;
-              setDlModal(prev => ({ ...prev, status: "error", error: ev.message }));
-              return;
-            }
-          } catch {}
-        }
-
-        setDlModal(prev => ({ ...prev, lines }));
-      } catch {}
-    };
-
-    poll();
-    const intervalId = setInterval(poll, 1000);
-    return () => {
-      active = false;
-      clearInterval(intervalId);
-    };
-  }, [dlModal.open, dlModal.status, dlModal.kind, dlModal.runId, dlModal.outputPath]);
+  useLogPoller(
+    dlModal.open && dlModal.status === "loading" && dlModal.kind === "format",
+    () => getRPC().request.readExportLog({ outputPath: dlModal.outputPath, runId: dlModal.runId }).then(r => r.lines),
+    lines => {
+      for (const raw of lines) {
+        try {
+          const ev = JSON.parse(raw);
+          if (ev.type === "done") {
+            downloadBlobFile(getBridgeUrl(ev.filePath), ev.filename)
+              .then(() => setDlModal(prev => ({ ...prev, status: "done", filename: ev.filename })))
+              .catch(e => setDlModal(prev => ({ ...prev, status: "error", error: String(e) })));
+            return;
+          }
+          if (ev.type === "error") {
+            setDlModal(prev => ({ ...prev, status: "error", error: ev.message }));
+            return;
+          }
+        } catch {}
+      }
+      setDlModal(prev => ({ ...prev, lines }));
+    },
+  );
 
   async function handleDownload(op: DownloadOp) {
     const runId = crypto.randomUUID();

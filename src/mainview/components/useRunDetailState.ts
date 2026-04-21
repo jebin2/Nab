@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getRPC } from "../lib/rpc";
+import { useLogPoller } from "../lib/useLogPoller";
 import { parseLog, type LogProgress } from "../lib/trainLog";
 import { parseLogLine } from "../lib/logParser";
 import { type TrainingRun } from "../lib/types";
@@ -13,23 +14,11 @@ export function useRunDetailState(run: TrainingRun, progress?: LogProgress) {
   const [runMeta, setRunMeta] = useState<DatasetUpdateMeta | null>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    let active = true;
-
-    async function loadLog() {
-      try {
-        const { lines: nextLines } = await getRPC().request.readTrainingLog({ outputPath: run.outputPath });
-        if (active) setLines(nextLines);
-      } catch {}
-    }
-
-    loadLog();
-    const intervalId = setInterval(loadLog, 1000);
-    return () => {
-      active = false;
-      clearInterval(intervalId);
-    };
-  }, [run.id, run.outputPath]);
+  useLogPoller(
+    true,
+    () => getRPC().request.readTrainingLog({ outputPath: run.outputPath }).then(r => r.lines),
+    setLines,
+  );
 
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });

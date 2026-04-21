@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
 import { Cloud } from "lucide-react";
 import { type TrainingRun } from "../lib/types";
 import { getRPC } from "../lib/rpc";
@@ -6,6 +6,7 @@ import CustomSelect from "../components/CustomSelect";
 import LogPanel from "../components/LogPanel";
 import { pageHeader, primaryBtn } from "../lib/styleUtils";
 import { parsePushLog, type PushPhase } from "../lib/pushLog";
+import { useLogPoller } from "../lib/useLogPoller";
 import { parseLogLine } from "../lib/logParser";
 
 interface Props {
@@ -39,21 +40,19 @@ export default function PushHub({ runs }: Props) {
     if (!selectedRunId && doneRuns.length > 0) setSelectedRunId(doneRuns[0].id);
   }, [runs]);
 
-  // Poll log while pushing; parsePushLog tracks phase/url while React renders lines.
-  useEffect(() => {
-    if (phase !== "pushing") return;
-    const interval = setInterval(async () => {
+  useLogPoller(
+    phase === "pushing",
+    () => {
       const id = jobIdRef.current;
-      if (!id) return;
-      try {
-        const { lines } = await getRPC().request.readHubLog({ jobId: id });
-        setRawLines(lines);
-        const { phase: p, url } = parsePushLog(lines);
-        if (p !== "pushing") { setPhase(p); setDoneUrl(url); }
-      } catch {}
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [phase]);
+      if (!id) return Promise.resolve([]);
+      return getRPC().request.readHubLog({ jobId: id }).then(r => r.lines);
+    },
+    lines => {
+      setRawLines(lines);
+      const { phase: p, url } = parsePushLog(lines);
+      if (p !== "pushing") { setPhase(p); setDoneUrl(url); }
+    },
+  );
 
   async function handlePush() {
     const run = doneRuns.find(r => r.id === selectedRunId);
