@@ -382,8 +382,10 @@ export async function buildCLIArtifact(modelPath: string, outBinary: string, run
 		// On Windows bun is not in PATH, so use the bundled executable directly.
 		// On Linux/macOS the system bun (via PATH) supports --compile correctly.
 		const bunExe = IS_WIN ? process.execPath : "bun";
+		const buildArgs = ["build", "--compile", "--minify", join(buildDir, "cli.ts"), "--outfile", outBinary];
+		if (IS_WIN) buildArgs.push(`--windows-icon=${join(import.meta.dir, "..", "..", "resources", "app.ico")}`);
 		const proc = Bun.spawn(
-			[bunExe, "build", "--compile", "--minify", join(buildDir, "cli.ts"), "--outfile", outBinary],
+			[bunExe, ...buildArgs],
 			{ stdout: "pipe", stderr: "pipe" },
 		);
 		runningProcesses.set(runId, proc);
