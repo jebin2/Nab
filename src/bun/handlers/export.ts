@@ -54,7 +54,7 @@ export const exportHandlers = {
 		const buildError = await buildCLIArtifact(modelPath, outBinary, runId);
 		if (buildError) return { filePath: "", filename: "", error: `Compile failed: ${buildError}` };
 
-		return { filePath: outBinary, filename: binaryName, error: null };
+		return { filePath: outBinary, filename: basename(outBinary), error: null };
 	},
 
 	exportCLI: async ({ outputPath, runName, destDir, runId }: {
