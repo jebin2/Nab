@@ -5,14 +5,13 @@ export default {
 		name: "Nab",
 		identifier: "nab.app",
 		version: "0.1.0",
-		icon: "resources/app.png",
 	},
 	build: {
 		bun: {
 			entrypoint: "src/bun/index.ts",
 		},
 		win: {
-			icon: "app.ico",
+			icon: "resources/app.ico",
 		},
 		linux: {
 			icon: "resources/app.png",
