@@ -1,6 +1,6 @@
 import { appendFile, mkdir, copyFile, cp, rm, stat } from "fs/promises";
 import { join, extname, basename, dirname } from "path";
-import { homedir } from "os";
+import { homedir, tmpdir } from "os";
 import {
 	EXPORT_SCRIPT, VENV_PYTHON,
 	IS_WIN, runProcess, runningProcesses, modelPath as getModelPath,
@@ -43,6 +43,12 @@ export const exportHandlers = {
 
 		const name       = safeName(runName);
 		const binaryName = `${name}-cli${IS_WIN ? ".exe" : ""}`;
+		const tempDir  = tmpdir();
+		const buildInTemp = join(tempDir, binaryName);
+		await rm(buildInTemp, { force: true }).catch(() => {});
+		const buildError = await buildCLIArtifact(modelPath, buildInTemp, runId);
+		if (buildError) return { filePath: "", filename: "", error: `Compile failed: ${buildError}` };
+
 		const downloadsDir = join(homedir(), "Downloads");
 		try { await mkdir(downloadsDir, { recursive: true }); } catch {}
 		let outBinary = join(downloadsDir, binaryName);
@@ -51,8 +57,7 @@ export const exportHandlers = {
 			outBinary = join(downloadsDir, `${binaryName} (${counter})`);
 			counter++;
 		}
-		const buildError = await buildCLIArtifact(modelPath, outBinary, runId);
-		if (buildError) return { filePath: "", filename: "", error: `Compile failed: ${buildError}` };
+		await copyFile(buildInTemp, outBinary);
 
 		return { filePath: outBinary, filename: basename(outBinary), error: null };
 	},
