@@ -46,12 +46,13 @@ const rpc = defineElectrobunRPC("bun", {
 // ── Window ────────────────────────────────────────────────────────────────────
 
 const { x, y, width, height } = Screen.getPrimaryDisplay().workArea;
-new BrowserWindow({
+const win = new BrowserWindow({
 	title: "Nab",
 	url:   "views://mainview/index.html",
 	frame: { x, y, width, height },
 	rpc,
 });
+win.maximize();
 
 console.log(`Nab started - bridge on port ${server.port}`);
 
