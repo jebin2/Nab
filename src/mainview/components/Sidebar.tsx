@@ -28,7 +28,7 @@ export default function Sidebar({ activePage, onNavigate }: Props) {
       {/* Logo */}
       <div style={{ height: 56, display: "flex", alignItems: "center", padding: "0 16px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <img src="icon.png" width={28} height={28} style={{ flexShrink: 0, borderRadius: 4 }} />
+          <img src="app.png" width={28} height={28} style={{ flexShrink: 0, borderRadius: 4 }} />
           <span style={{ fontWeight: 700, fontSize: 15, letterSpacing: "-0.3px", color: "var(--text)" }}>
             Nab
           </span>

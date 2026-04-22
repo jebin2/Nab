@@ -31,7 +31,7 @@ mkdir -p "$HOME/.local/bin"
 ln -sf "$LAUNCHER" "$BIN_LINK"
 echo "Created command: nab"
 
-ICON_SRC="$APP_DIR/stable/app/Resources/app/icon.png"
+ICON_SRC="$APP_DIR/stable/app/Resources/app/app.png"
 ICON_DEST="$HOME/.local/share/icons/hicolor/256x256/apps/nab.png"
 
 mkdir -p "$HOME/.local/share/icons/hicolor/256x256/apps"

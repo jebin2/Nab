@@ -5,20 +5,20 @@ export default {
 		name: "Nab",
 		identifier: "nab.app",
 		version: "0.1.0",
-		icon: "resources/icon_transparent.png",
+		icon: "resources/app.png",
 	},
 	build: {
 		bun: {
 			entrypoint: "src/bun/index.ts",
 		},
 		win: {
-			icon: "resources/icon_transparent.ico",
+			icon: "resources/app.ico",
 		},
 		linux: {
-			icon: "resources/icon_transparent.png",
+			icon: "resources/app.png",
 		},
 		mac: {
-			icons: "resources/icon.iconset",
+			icons: "resources/app.icns",
 		},
 		views: {
 			mainview: {
@@ -28,7 +28,7 @@ export default {
 		copy: {
 			"src/mainview/index.html": "views/mainview/index.html",
 			"src/mainview/index.css": "views/mainview/index.css",
-			"resources/icon_transparent.png": "views/mainview/icon.png",
+			"resources/app.png": "views/mainview/app.png",
 			"src/python/train.py": "python/train.py",
 			"src/python/infer.py": "python/infer.py",
 			"src/python/export.py": "python/export.py",

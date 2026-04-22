@@ -87,7 +87,7 @@ jobs:
           $src = Get-ChildItem artifacts/ -Filter "*Setup.zip" | Select-Object -First 1
           Write-Host "=== Using: $($src.FullName) ==="
           & "C:\Program Files\7-Zip\7z.exe" x $src.FullName -o"setup_extracted"
-          $iconSrc = "$env:GITHUB_WORKSPACE\resources\icon_transparent.ico"
+          $iconSrc = "$env:GITHUB_WORKSPACE\resources\app.ico"
           Copy-Item $iconSrc installer-icon.ico
           Copy-Item installer-icon.ico setup_extracted\installer-icon.ico
           Copy-Item scripts/installer.nsi installer.nsi
