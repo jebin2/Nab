@@ -57,7 +57,7 @@ export const exportHandlers = {
 		let outBinary = join(downloadsDir, binaryName);
 		let counter = 1;
 		while (await Bun.file(outBinary).exists()) {
-			outBinary = join(downloadsDir, `${binaryName} (${counter})`);
+			outBinary = join(downloadsDir, `${name}-cli (${counter})${IS_WIN ? ".exe" : ""}`);
 			counter++;
 		}
 		await copyFile(buildInTemp, outBinary);
