@@ -168,7 +168,15 @@ export async function runProcess(
 		env:   env ? { ...process.env, ...env } : process.env as Record<string, string>,
 	});
 
-	if (runId) runningProcesses.set(runId, proc);
+	if (runId) {
+		const existing = runningProcesses.get(runId);
+		if (existing) {
+			console.log(`[util] Killing existing process for runId: ${runId}`);
+			existing.kill("SIGKILL");
+			runningProcesses.delete(runId);
+		}
+		runningProcesses.set(runId, proc);
+	}
 
 	proc.stdin?.write(stdinData ?? "", "utf-8");
 	proc.stdin?.end();
