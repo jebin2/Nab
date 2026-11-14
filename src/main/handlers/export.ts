@@ -1,4 +1,3 @@
-import { spawn } from "child_process";
 import { appendFile, mkdir, copyFile, cp, rm, stat } from "fs/promises";
 import { join, extname, basename, dirname } from "path";
 import { homedir, tmpdir } from "os";
@@ -131,13 +130,12 @@ export const exportHandlers = {
 
 			const srcStat = await stat(exportedPath);
 			if (srcStat.isDirectory()) {
-				const parent  = dirname(exportedPath);
-				const dirName = basename(exportedPath);
-				const zipPath = join(parent, `${dirName}.zip`);
-				const proc    = spawn("zip", ["-r", "-q", zipPath, dirName], { cwd: parent, stdio: ["ignore", "pipe", "pipe"] });
-				runningProcesses.set(runId, proc);
-				const exitCode = await new Promise<number>(resolve => proc.on("close", code => resolve(code ?? 0)));
-				runningProcesses.delete(runId);
+				const zipPath = join(dirname(exportedPath), `${basename(exportedPath)}.zip`);
+				// Python's zipfile works on every platform; the `zip` command isn't on Windows.
+				const { exitCode } = await runProcess(
+					[VENV_PYTHON, "-m", "zipfile", "-c", zipPath, exportedPath],
+					{ runId },
+				);
 				if (exitCode !== 0) {
 					await log(JSON.stringify({ type: "error", message: "Failed to create zip archive for export." }));
 					return;

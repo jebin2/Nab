@@ -122,6 +122,18 @@ Engine-independent fixes. Ship, then launch.
       (a requirements file shipped with the app).
 - [ ] **First-run screen:** download size, real progress, time estimate, GPU
       check with a plain-language result, retry on failure.
+- [x] **Process exit fixes:** a killed process no longer counts as success
+      (broken first-run installs, cut-off CLI exports); a training crash with no
+      report now shows an error instead of "training" forever; log lines stay in
+      order; the setup check looks for `ultralytics`/`torch`; folder exports zip
+      with Python instead of the `zip` command (missing on Windows).
+- [ ] **One process helper with live push events:** a single `ManagedProcess`
+      (start, stream, exit, stop with SIGTERM then SIGKILL, kill worker
+      processes) and push log events to the UI over IPC instead of re-reading
+      `train.log` every second. Also makes Pause during dataset copy or install
+      actually stop the run, and blocks double starts.
+- [ ] **Main process owns run status** and pushes changes to the UI; store
+      `updatedAt` as a timestamp instead of the text "just now".
 - [ ] **Training presets:** Quick test / Good / Best, mapped to model size and
       epochs; current controls move under "Advanced".
 - [ ] **Licence:** add `LICENSE` (AGPL-3.0 for now) and a README note on what it

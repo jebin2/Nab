@@ -1,9 +1,10 @@
 import { spawn } from "child_process";
+import { createWriteStream } from "fs";
 import { appendFile, copyFile, mkdir, readFile, rm, stat, readdir, unlink, writeFile } from "fs/promises";
 import { basename, dirname, extname, join } from "path";
 import {
 	TRAIN_SCRIPT, MODELS_DIR, runningProcesses,
-	prepareEnvironment, streamProcessOutput, checkpointPath, modelPath as getModelPath,
+	prepareEnvironment, streamProcessOutput, waitForExit, checkpointPath, modelPath as getModelPath,
 	fileExists,
 } from "../util";
 import { exp, IMAGE_EXTS, checkFileHasPolygon, detectHasPolygons, listAnnotatedImages, readLogFile, type AnnotatedImageEntry } from "../common";
@@ -69,6 +70,17 @@ async function copyDatasetFiles(
 	return { imageCount: total, hasPolygons };
 }
 
+// Runs the user paused or stopped. Their process exit is expected, so no
+// "stopped unexpectedly" error is logged for them.
+const userStopped = new Set<string>();
+
+function isTerminalEvent(line: string): boolean {
+	try {
+		const type = JSON.parse(line)?.type;
+		return type === "done" || type === "error";
+	} catch { return false; }
+}
+
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
 export const trainingHandlers = {
@@ -131,6 +143,9 @@ export const trainingHandlers = {
 		const venvPython = await prepareEnvironment(logPath, config.id);
 		await appendFile(logPath, JSON.stringify({ type: "stderr", text: "[setup] Starting training..." }) + "\n");
 
+		await mkdir(MODELS_DIR, { recursive: true });
+		userStopped.delete(config.id);
+
 		let proc: ReturnType<typeof spawn>;
 		try {
 			proc = spawn(venvPython, [TRAIN_SCRIPT], {
@@ -144,17 +159,46 @@ export const trainingHandlers = {
 			}) + "\n");
 			return { started: false };
 		}
-
 		runningProcesses.set(config.id, proc);
-		await mkdir(MODELS_DIR, { recursive: true });
+
+		// One append stream per run keeps log lines in the order they arrive.
+		const log = createWriteStream(logPath, { flags: "a" });
+		log.on("error", console.error);
+		const writeLine = (line: string) => { log.write(line + "\n"); };
+
+		let sawTerminal = false;
+		let spawnError: Error | null = null;
+		const exited = waitForExit(proc, err => { spawnError = err; });
+
+		proc.stdin?.on("error", () => {}); // process may die before reading its config
 		proc.stdin?.write(JSON.stringify({ ...config, datasetPath, modelsDir: MODELS_DIR }), "utf-8");
 		proc.stdin?.end();
 
-		streamProcessOutput(proc, {
-			stdoutHandler: line => appendFile(logPath, line + "\n").catch(console.error),
-			stderrHandler: text =>
-				appendFile(logPath, JSON.stringify({ type: "stderr", text }) + "\n").catch(console.error),
-		}).catch(console.error).finally(() => runningProcesses.delete(config.id));
+		const streamed = streamProcessOutput(proc, {
+			stdoutHandler: async line => {
+				if (isTerminalEvent(line)) sawTerminal = true;
+				writeLine(line);
+			},
+			stderrHandler: async text => { writeLine(JSON.stringify({ type: "stderr", text })); },
+		}).catch(console.error);
+
+		void (async () => {
+			const exitCode = await exited;
+			if (!spawnError) await streamed;
+			if (runningProcesses.get(config.id) === proc) runningProcesses.delete(config.id);
+			// Python normally ends with a done/error line. If it died without one
+			// (out of memory, CUDA crash, killed by the OS) say so, or the UI would
+			// show "training" forever.
+			if (!sawTerminal && !userStopped.has(config.id)) {
+				const reason = spawnError
+					? `Failed to start Python process: ${(spawnError as Error).message}`
+					: proc.signalCode
+						? `Training stopped unexpectedly (killed by ${proc.signalCode}). The machine may have run out of memory.`
+						: `Training stopped unexpectedly (exit code ${exitCode}).`;
+				writeLine(JSON.stringify({ type: "error", message: reason }));
+			}
+			log.end();
+		})();
 
 		return { started: true };
 	},
@@ -163,7 +207,7 @@ export const trainingHandlers = {
 		runId: string; clearCheckpoint?: boolean; outputPath?: string;
 	}) => {
 		const proc = runningProcesses.get(runId);
-		if (proc) { proc.kill(9); runningProcesses.delete(runId); }
+		if (proc) { userStopped.add(runId); proc.kill(9); runningProcesses.delete(runId); }
 		if (clearCheckpoint && outputPath) {
 			await unlink(checkpointPath(exp(outputPath))).catch(() => {});
 			await unlink(join(exp(outputPath), "train.log")).catch(() => {});

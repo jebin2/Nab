@@ -193,18 +193,30 @@ export async function runProcess(
 	proc.stdin?.end();
 
 	try {
-		const exitCodePromise = new Promise<number>(resolve =>
-			proc.on("close", code => resolve(code ?? 0))
-		);
-		const [stdout, stderr, exitCode] = await Promise.all([
-			streamPipe(proc.stdout, stdoutHandler, collectStdout),
-			streamPipe(proc.stderr, stderrHandler, collectStderr),
-			exitCodePromise,
-		]);
+		let spawnError: Error | null = null;
+		const exitCodePromise = waitForExit(proc, err => { spawnError = err; });
+		const stdoutPromise = streamPipe(proc.stdout, stdoutHandler, collectStdout);
+		const stderrPromise = streamPipe(proc.stderr, stderrHandler, collectStderr);
+		const exitCode = await exitCodePromise;
+		// A process that never started has pipes that never end; don't wait on them.
+		if (spawnError) return { stdout: "", stderr: (spawnError as Error).message, exitCode };
+		const [stdout, stderr] = await Promise.all([stdoutPromise, stderrPromise]);
 		return { stdout, stderr, exitCode };
 	} finally {
-		if (runId) runningProcesses.delete(runId);
+		if (runId && runningProcesses.get(runId) === proc) runningProcesses.delete(runId);
 	}
+}
+
+/**
+ * Resolves with the process exit code. A process killed by a signal (Node
+ * reports code null) or one that failed to start counts as a failure (1),
+ * never as success.
+ */
+export function waitForExit(proc: ChildProcess, onSpawnError?: (err: Error) => void): Promise<number> {
+	return new Promise(resolve => {
+		proc.once("error", err => { onSpawnError?.(err); resolve(1); });
+		proc.once("close", code => resolve(code ?? 1));
+	});
 }
 
 export async function streamProcessOutput(
@@ -302,6 +314,10 @@ export async function runWithPTY(
 
 // ── prepareEnvironment ────────────────────────────────────────────────────────
 
+const VENV_CHECK =
+	"import importlib.util as u, sys; " +
+	"sys.exit(0 if all(u.find_spec(m) for m in ('ultralytics', 'torch')) else 1)";
+
 export async function prepareEnvironment(
 	logPath: string,
 	runId: string,
@@ -355,7 +371,9 @@ export async function prepareEnvironment(
 	const venvOk = (await fileExists(VENV_READY_MARKER)) &&
 		await new Promise<boolean>(resolve => {
 			try {
-				const p = spawn(VENV_PYTHON, ["-c", "import sys; sys.exit(0)"], { stdio: "ignore" });
+				// Check the engine packages are installed, not just that Python starts.
+				// find_spec doesn't import torch, so this stays fast.
+				const p = spawn(VENV_PYTHON, ["-c", VENV_CHECK], { stdio: "ignore" });
 				p.on("close", code => resolve(code === 0));
 				p.on("error", () => resolve(false));
 			} catch { resolve(false); }
@@ -422,10 +440,7 @@ export async function buildCLIArtifact(modelPath: string, outBinary: string, run
 			// If Bun fails to start, its pipes never emit "end", so don't wait on
 			// the output in that case.
 			let spawnFailed = false;
-			const exited = new Promise<number>(resolve => {
-				proc.on("error", err => { spawnFailed = true; stderr += `${err.message}\n`; resolve(1); });
-				proc.on("close", code => resolve(code ?? 0));
-			});
+			const exited = waitForExit(proc, err => { spawnFailed = true; stderr += `${err.message}\n`; });
 			const streamed = streamProcessOutput(proc, {
 				stderrHandler: async line => { stderr += line + "\n"; },
 			});
