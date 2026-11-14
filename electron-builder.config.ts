@@ -13,8 +13,8 @@ export default {
 		{ from: "resources/app.ico",  to: "app.ico"  },
 		{ from: "resources/app.icns", to: "app.icns" },
 		{ from: "src/python", to: "python", filter: ["**/*.py"] },
-		{ from: "src/main/cli.ts", to: "cli/cli.ts" },
-		{ from: "src/main/util.ts", to: "cli/util.ts" },
+		// Sources for the standalone CLI export (CLI_SOURCES in src/main/util.ts).
+		{ from: "src/main", to: "cli", filter: ["cli.ts", "util.ts", "managedProcess.ts", "engine.ts"] },
 		// Pinned Bun for CLI export; fetched by scripts/fetch-bun.mjs.
 		{ from: "vendor/bun", to: "bun", filter: ["bun", "bun.exe"] },
 	],

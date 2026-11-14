@@ -3,10 +3,11 @@ import { appendFile, copyFile, mkdir, readFile, rm, stat, readdir, unlink, write
 import { basename, dirname, extname, join } from "path";
 import {
 	TRAIN_SCRIPT, MODELS_DIR, runningProcesses,
-	prepareEnvironment, checkpointPath, modelPath as getModelPath,
+	checkpointPath, modelPath as getModelPath,
 	fileExists, cleanLine,
 } from "../util";
 import { startManaged, killTree, type ManagedProcess } from "../managedProcess";
+import { prepareEnvironment } from "../engine";
 import { exp, IMAGE_EXTS, checkFileHasPolygon, detectHasPolygons, listAnnotatedImages, readLogFile, type AnnotatedImageEntry } from "../common";
 
 // ── run-meta.json schema ──────────────────────────────────────────────────────
@@ -42,6 +43,9 @@ const LOG_PUSH_INTERVAL_MS = 100;
 type ActiveRun = {
 	status: TrainingStatus;
 	cancel: null | "pause" | "stop";
+	/** Resolves when the user pauses or stops; lets waits on shared work end early. */
+	cancelled: Promise<void>;
+	signalCancel: () => void;
 	managed?: ManagedProcess;
 	flow: Promise<void>;
 };
@@ -212,11 +216,18 @@ async function runTraining(config: TrainingConfig, run: ActiveRun): Promise<void
 	if (cancelled()) throw new Cancelled();
 
 	// 2. Python environment. prepareEnvironment appends to train.log itself, so
-	//    flush ours first and only push its lines to the UI.
+	//    flush ours first and only push its lines to the UI. The install is
+	//    shared (the setup screen or another run may be driving it), so pausing
+	//    stops waiting for it instead of killing it.
 	await log.idle();
-	const venvPython = await prepareEnvironment(logPath, config.id, async text => {
-		log.push(JSON.stringify({ type: "stderr", text }));
-	}).catch(err => { throw cancelled() ? new Cancelled() : err; });
+	const onCancel = run.cancelled.then(() => { throw new Cancelled(); });
+	onCancel.catch(() => {}); // may reject after the race is settled
+	const venvPython = await Promise.race([
+		prepareEnvironment(logPath, config.id, async (text: string) => {
+			log.push(JSON.stringify({ type: "stderr", text }));
+		}),
+		onCancel,
+	]).catch((err: unknown) => { throw cancelled() ? new Cancelled() : err; });
 	if (cancelled()) throw new Cancelled();
 
 	// 3. Train.
@@ -280,7 +291,9 @@ export const trainingHandlers = {
 	startTraining: async (config: TrainingConfig) => {
 		if (active.has(config.id)) return { started: false };
 
-		const run: ActiveRun = { status: "installing", cancel: null, flow: Promise.resolve() };
+		let signalCancel = () => {};
+		const cancelledPromise = new Promise<void>(resolve => { signalCancel = resolve; });
+		const run: ActiveRun = { status: "installing", cancel: null, cancelled: cancelledPromise, signalCancel, flow: Promise.resolve() };
 		active.set(config.id, run);
 		setStatus(config.id, "installing");
 
@@ -321,13 +334,8 @@ export const trainingHandlers = {
 
 		run.cancel = clearCheckpoint ? "stop" : "pause";
 		setStatus(runId, "stopping");
-		if (run.managed) {
-			void run.managed.stop(STOP_GRACE_MS);
-		} else {
-			// Setup phase: kill pip / the runtime download if one is running.
-			const setupProc = runningProcesses.get(runId);
-			if (setupProc) killTree(setupProc);
-		}
+		run.signalCancel();
+		if (run.managed) void run.managed.stop(STOP_GRACE_MS);
 		await run.flow;
 		return {};
 	},

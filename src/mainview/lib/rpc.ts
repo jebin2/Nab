@@ -100,6 +100,9 @@ type RPCSchema = {
   updateDataset:         { params: OutputPathParams;      response: UpdateDatasetResponse };
   stopTraining:          { params: StopTrainingParams;    response: EmptyResponse };
   getTrainingStatus:     { params: EmptyParams;           response: { statuses: Record<string, RunStatus> } };
+  getEngineStatus:       { params: EmptyParams;           response: EngineStatus };
+  startEngineSetup:      { params: EmptyParams;           response: EmptyResponse };
+  cancelEngineSetup:     { params: EmptyParams;           response: EmptyResponse };
   exportModel:           { params: ExportModelParams;     response: ExportResult };
   buildAndDownloadCLI:   { params: CliBuildParams;        response: CliBuildResult };
   exportCLI:             { params: ExportCliParams;       response: ExportCliResult };
@@ -130,9 +133,27 @@ export type TrainingStatusEvent = {
 };
 export type TrainingLogEvent = { runId: string; lines: string[]; reset?: boolean };
 
+// Mirrors EngineStatus in src/main/engine.ts.
+export type EngineState = "missing" | "outdated" | "installing" | "ready" | "failed" | "unsupported";
+export type EngineStatus = {
+  state: EngineState;
+  plan: {
+    platform: string;
+    gpu: { kind: "nvidia" | "apple" | "none"; name?: string; driverMajor?: number };
+    variant: "cpu" | "cu126" | "cu130" | "pypi" | null;
+    downloadMB: number | null;
+    unsupported?: string;
+    gpuSummary: string;
+  };
+  progress?: { phase: string; pct: number | null; doneMB: number; totalMB: number | null; etaSec: number | null };
+  error?: string;
+  device?: { gpuUsable: boolean; message: string };
+};
+
 type EventSchema = {
   "training:status": TrainingStatusEvent;
   "training:log":    TrainingLogEvent;
+  "engine:status":   EngineStatus;
 };
 
 /** Subscribe to an event pushed by the main process. Returns an unsubscribe function. */

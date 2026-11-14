@@ -77,16 +77,16 @@ confirming by running the app.
    requirements look like leftovers from Electrobun; Electron's installers
    shouldn't need them. *(Confirmed 2026-11-14: electron-builder's NSIS / AppImage /
    dmg targets need neither. Fixed in the README.)*
-3. **First-run download is large and unannounced.** On Linux, PyPI's torch
-   pulls about 2–3 GB of CUDA libraries without warning. (Versions are now
-   pinned; see v0.2.)
+3. ~~**First-run download is large and unannounced.**~~ Fixed: the setup banner
+   states the size first, and machines without an NVIDIA GPU get the CPU build
+   (Linux: ~0.4 GB instead of ~3.2 GB).
 4. **Licence.** Now AGPL-3.0, but Ultralytics claims models trained with it fall
    under their licence, which conflicts with the goal. See the licensing
    section below.
-6. **No GPU training on Windows.** PyPI's torch wheels for Windows are CPU-only;
-   CUDA builds come from download.pytorch.org. Handle this in the first-run
-   GPU check (install the CUDA build when an NVIDIA GPU is present).
-   *(From PyPI's published wheels; unverified in the app.)*
+6. ~~**No GPU training on Windows.**~~ Fixed in code: with an NVIDIA GPU, setup
+   installs the CUDA build from download.pytorch.org (CUDA 13.0 for driver
+   580+, else 12.6). *Unverified on a real Windows/NVIDIA machine.* AMD and
+   Intel GPUs still train on the CPU.
 7. **No Intel Mac support for training.** torch has no macOS x86_64 wheels for
    recent versions, and the dmg is Apple Silicon only.
 5. **Repo clutter.** About 188 MB of git history even though the current tree is
@@ -130,8 +130,14 @@ Engine-independent fixes. Ship, then launch.
       them too). Existing installs update to the pins on their next start.
       Checked 2026-11-14: all downloads exist and the set resolves with pip.
       Transitive dependencies (numpy, opencv, ...) are still unpinned.
-- [ ] **First-run screen:** download size, real progress, time estimate, GPU
-      check with a plain-language result, retry on failure.
+- [x] **First-run screen:** `src/main/engine.ts` + `EngineSetupBanner`. Before
+      downloading: the GPU found, the one-time download size (measured per
+      platform/GPU) with a time range and disk space needed. During: overall
+      progress across all downloads, time left, Cancel. After: a plain message
+      on what training will use (checked with torch). Failure: the reason and
+      Try again. One shared install, so training, inference, export and the
+      banner never run two pip installs at once. **Still to do:** run a real
+      install end to end (not yet done on any machine).
 - [x] **Process exit fixes:** a killed process no longer counts as success
       (broken first-run installs, cut-off CLI exports); a training crash with no
       report now shows an error instead of "training" forever; log lines stay in

@@ -1,6 +1,5 @@
 import { spawn, type ChildProcess } from "child_process";
-import { access, appendFile, copyFile, mkdir, mkdtemp, readFile, rm, unlink, writeFile } from "fs/promises";
-import { createHash } from "crypto";
+import { access, copyFile, mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 import { homedir, tmpdir } from "os";
 import { killTree } from "./managedProcess";
@@ -43,7 +42,9 @@ export const RUNTIME_PYTHON    = join(RUNTIME_DIR, "python", IS_WIN ? "python.ex
 export const VENV_PYTHON       = join(VENV_DIR, IS_WIN ? "Scripts/python.exe" : "bin/python");
 export const VENV_READY_MARKER = join(VENV_DIR, ".ready");
 export const CLI_ENTRY         = join(CLI_DIR, "cli.ts");
-export const UTIL_ENTRY        = join(CLI_DIR, "util.ts");
+// TypeScript sources the standalone CLI is compiled from (cli.ts and the
+// modules it imports). Keep in sync with extraResources in electron-builder.config.ts.
+export const CLI_SOURCES       = ["cli.ts", "util.ts", "managedProcess.ts", "engine.ts"];
 export const BUNDLED_BUN       = join(BUN_DIR, IS_WIN ? "bun.exe" : "bun");
 export const TRAIN_SCRIPT      = join(PYTHON_DIR, "train.py");
 export const INFER_SCRIPT      = join(PYTHON_DIR, "infer.py");
@@ -62,7 +63,7 @@ export type Detection = {
 	cx: number; cy: number; w: number; h: number;
 };
 
-type LineHandler = (line: string) => Promise<void>;
+export type LineHandler = (line: string) => Promise<void>;
 type RunProcessOptions = {
 	stdinData?: string;
 	stdoutHandler?: LineHandler;
@@ -243,62 +244,6 @@ export function modelPath(outputPath: string): string {
 	return join(outputPath, "weights", "weights", "best.pt");
 }
 
-// ── downloadPythonRuntime ─────────────────────────────────────────────────────
-
-// Pinned python-build-standalone build. Bump deliberately: update the release,
-// version and every checksum (from the release's SHA256SUMS file) together.
-const PYTHON_RELEASE = "20261026";
-const PYTHON_VERSION = "3.12.16";
-const PYTHON_ASSETS: Record<string, { triple: string; sha256: string }> = {
-	"linux-x64":    { triple: "x86_64-unknown-linux-gnu",  sha256: "ce4f6d0a6cfdb3bed6e44c2f9affd85943c76a42e25ad3a259002f31d6fb8a20" },
-	"linux-arm64":  { triple: "aarch64-unknown-linux-gnu", sha256: "bb4b6392670c5d3f93876996fcaa19858a4a413a0c7720144c18b0d6f1f0db2d" },
-	"darwin-x64":   { triple: "x86_64-apple-darwin",       sha256: "37c38fda76fec1fbf310adcbafb7f0d96af13b5511bf8ea954c3aa8eec185734" },
-	"darwin-arm64": { triple: "aarch64-apple-darwin",      sha256: "353d5f1b4fd2715e7053f12f068435d5bbad16b91e057006b5d01e0925709a7e" },
-	"win32-x64":    { triple: "x86_64-pc-windows-msvc",    sha256: "1f2ab53880fc67ea323398c6388e05af28addc99a8e389209f08a51fdff4b149" },
-};
-
-export function pythonRuntimeAsset(platformKey = `${process.platform}-${process.arch}`) {
-	const asset = PYTHON_ASSETS[platformKey];
-	if (!asset) return null;
-	const filename = `cpython-${PYTHON_VERSION}+${PYTHON_RELEASE}-${asset.triple}-install_only_stripped.tar.gz`;
-	return {
-		filename,
-		url: `https://github.com/astral-sh/python-build-standalone/releases/download/${PYTHON_RELEASE}/${encodeURIComponent(filename)}`,
-		sha256: asset.sha256,
-	};
-}
-
-export async function downloadPythonRuntime(
-	destPath: string,
-	log: (text: string) => Promise<void>,
-): Promise<void> {
-	const platformKey = `${process.platform}-${process.arch}`;
-	const asset = pythonRuntimeAsset(platformKey);
-	if (!asset) throw new Error(`Unsupported platform for Python download: ${platformKey}`);
-
-	await log(`[setup] Downloading Python runtime: ${asset.filename}...`);
-	const dlRes = await fetch(asset.url, { headers: { "User-Agent": "Nab" } });
-	if (!dlRes.ok || !dlRes.body) throw new Error(`Download failed: ${dlRes.status}`);
-
-	await mkdir(YOLO_DIR, { recursive: true });
-	const hash = createHash("sha256");
-	const chunks: Uint8Array[] = [];
-	const reader = dlRes.body.getReader();
-	while (true) {
-		const { done, value } = await reader.read();
-		if (done) break;
-		chunks.push(value);
-		hash.update(value);
-	}
-	if (hash.digest("hex") !== asset.sha256)
-		throw new Error("Python runtime download is corrupt (checksum mismatch). Check your connection and try again.");
-	const buf = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0));
-	let offset = 0;
-	for (const c of chunks) { buf.set(c, offset); offset += c.length; }
-	await writeFile(destPath, buf);
-	await log("[setup] Python runtime downloaded.");
-}
-
 // ── PTY wrapper ───────────────────────────────────────────────────────────────
 
 export async function runWithPTY(
@@ -322,113 +267,6 @@ export async function runWithPTY(
 	return { exitCode };
 }
 
-// ── prepareEnvironment ────────────────────────────────────────────────────────
-
-// Training engine versions installed into ~/.nab/venv. Pinned so a new
-// upstream release can't break new installs. These live in code (not a
-// requirements file) so the standalone CLI export gets them too. Bump on
-// purpose, test training/inference/export, then release; existing installs
-// update on their next start. torch and torchvision must be a matching pair.
-export const ENGINE_REQUIREMENTS = [
-	"ultralytics==8.4.196",
-	"torch==2.14.1",
-	"torchvision==0.29.1",
-	"psutil==7.2.2",
-];
-
-const VENV_CHECK =
-	"import importlib.util as u, sys; " +
-	"sys.exit(0 if all(u.find_spec(m) for m in ('ultralytics', 'torch')) else 1)";
-
-export async function prepareEnvironment(
-	logPath: string,
-	runId: string,
-	stderrHandler?: LineHandler,
-): Promise<string> {
-	const log = async (text: string) => {
-		await appendFile(logPath, JSON.stringify({ type: "stderr", text }) + "\n").catch(() => {});
-		await stderrHandler?.(text);
-	};
-
-	const runOpts = {
-		stdoutHandler: log,
-		stderrHandler: log,
-		collectStdout: false,
-		collectStderr: false,
-		env: { ...process.env, PYTHONUNBUFFERED: "1" },
-		runId,
-	};
-
-	async function run(cmd: string[], label: string): Promise<void> {
-		const { exitCode } = await runProcess(cmd, runOpts);
-		if (exitCode !== 0) {
-			await log(`[setup] error: ${label} failed (exit ${exitCode})`);
-			throw new Error(`${label} failed with exit code ${exitCode}`);
-		}
-	}
-
-	async function runPip(packages: string[], label: string): Promise<void> {
-		const pipLog = coalescePipProgress(log);
-		const cmd = [VENV_PYTHON, "-m", "pip", "install", "--progress-bar", "raw", ...packages];
-		const { exitCode } = await runWithPTY(cmd, {
-			...runOpts,
-			stdoutHandler: pipLog,
-			stderrHandler: pipLog,
-		});
-		if (exitCode !== 0) {
-			await log(`[setup] error: ${label} failed (exit ${exitCode})`);
-			throw new Error(`${label} failed with exit code ${exitCode}`);
-		}
-	}
-
-	if (!(await fileExists(RUNTIME_PYTHON))) {
-		if (!(await fileExists(RUNTIME_TARBALL)))
-			await downloadPythonRuntime(RUNTIME_TARBALL, log);
-		await log("[setup] Extracting Python runtime...");
-		await mkdir(RUNTIME_DIR, { recursive: true });
-		await run(["tar", "xzf", RUNTIME_TARBALL, "-C", RUNTIME_DIR], "tar extract");
-		await log("[setup] Python runtime ready.");
-	}
-
-	// The marker holds a hash of the pins, so changing them triggers a
-	// reinstall on the next start.
-	const reqHash = createHash("sha256").update(ENGINE_REQUIREMENTS.join("\n")).digest("hex");
-
-	const venvOk = (await fileExists(VENV_READY_MARKER)) &&
-		await new Promise<boolean>(resolve => {
-			try {
-				// Check the engine packages are installed, not just that Python starts.
-				// find_spec doesn't import torch, so this stays fast.
-				const p = spawn(VENV_PYTHON, ["-c", VENV_CHECK], { stdio: "ignore" });
-				p.on("close", code => resolve(code === 0));
-				p.on("error", () => resolve(false));
-			} catch { resolve(false); }
-		});
-
-	if (!venvOk) {
-		if (await fileExists(VENV_READY_MARKER)) {
-			await log("[setup] Virtual environment is broken — recreating...");
-			await rm(VENV_DIR, { recursive: true, force: true }).catch(() => {});
-			await unlink(VENV_READY_MARKER).catch(() => {});
-		}
-		await log("[setup] Creating virtual environment at ~/.nab/venv...");
-		await run([RUNTIME_PYTHON, "-m", "venv", "--clear", VENV_DIR], "venv create");
-		await log("[setup] Virtual environment created.");
-		await log("[setup] Installing the training engine (first run only - may take a few minutes)...");
-		await runPip(ENGINE_REQUIREMENTS, "pip install (training engine)");
-		await writeFile(VENV_READY_MARKER, reqHash);
-		await log("[setup] Environment ready.");
-	} else if ((await readFile(VENV_READY_MARKER, "utf-8").catch(() => "")).trim() !== reqHash) {
-		// Installed with different (or unpinned) versions: bring it to the pins.
-		await log("[setup] Updating the training engine to the pinned versions...");
-		await runPip(ENGINE_REQUIREMENTS, "pip install (training engine)");
-		await writeFile(VENV_READY_MARKER, reqHash);
-		await log("[setup] Environment ready.");
-	}
-
-	return VENV_PYTHON;
-}
-
 // ── buildCLIArtifact ──────────────────────────────────────────────────────────
 
 /** Bun used to compile CLI exports: NAB_BUN override, then the bundled copy. */
@@ -443,8 +281,7 @@ export async function buildCLIArtifact(modelPath: string, outBinary: string, run
 	let stderr = "";
 
 	try {
-		await copyFile(CLI_ENTRY,         join(buildDir, "cli.ts"));
-		await copyFile(UTIL_ENTRY,        join(buildDir, "util.ts"));
+		for (const file of CLI_SOURCES) await copyFile(join(CLI_DIR, file), join(buildDir, file));
 		await copyFile(modelPath,         join(buildDir, "model.pt"));
 		await copyFile(INFER_SCRIPT,      join(buildDir, "infer.py"));
 		await copyFile(LOGGER_SCRIPT,     join(buildDir, "logger.py"));
@@ -474,47 +311,4 @@ export async function buildCLIArtifact(modelPath: string, outBinary: string, run
 	} finally {
 		await rm(buildDir, { recursive: true, force: true }).catch(() => {});
 	}
-}
-
-// ── runInference ──────────────────────────────────────────────────────────────
-
-export async function runInference(
-	imagePath:   string,
-	modelPath:   string,
-	confidence:  number,
-	inferScript: string,
-	logPath:     string,
-	runId:       string,
-	stderrHandler?: LineHandler,
-): Promise<{ detections: Detection[]; inferenceMs: number; error: string | null }> {
-	try {
-		await prepareEnvironment(logPath, runId, stderrHandler);
-	} catch (err) {
-		return { detections: [], inferenceMs: 0, error: `Environment setup failed: ${(err as Error).message}` };
-	}
-
-	const logStderr = async (text: string) => {
-		await appendFile(logPath, JSON.stringify({ type: "stderr", text }) + "\n").catch(() => {});
-		await stderrHandler?.(text);
-	};
-
-	const t0 = Date.now();
-	const { stdout, stderr } = await runProcess(
-		[VENV_PYTHON, inferScript],
-		{
-			stdinData: JSON.stringify({ imagePath, modelPath, confidence }),
-			stderrHandler: logStderr,
-		},
-	);
-
-	const inferenceMs = Date.now() - t0;
-	const data = parseLastJsonLine(stdout);
-	if (!data) {
-		if (stderr.trim()) console.error("[infer] stderr:\n", stderr.trim());
-		if (stdout.trim()) console.error("[infer] stdout:\n", stdout.trim());
-		const hint = stderr.trim().split("\n").filter(l => l.trim()).pop() ?? "";
-		return { detections: [], inferenceMs, error: `Inference failed.${hint ? ` ${hint}` : ""}` };
-	}
-	if (data.error) return { detections: [], inferenceMs, error: data.error as string };
-	return { detections: (data.detections ?? []) as Detection[], inferenceMs, error: null };
 }

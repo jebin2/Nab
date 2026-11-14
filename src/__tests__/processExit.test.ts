@@ -13,16 +13,16 @@ const FAKE_TRAIN = join(work, "train.sh");
 
 vi.mock("../main/util", async importOriginal => {
 	const actual = await importOriginal<typeof import("../main/util")>();
+	return { ...actual, TRAIN_SCRIPT: FAKE_TRAIN, MODELS_DIR: join(work, "models") };
+});
+
+vi.mock("../main/engine", async importOriginal => {
+	const actual = await importOriginal<typeof import("../main/engine")>();
 	return {
 		...actual,
-		TRAIN_SCRIPT: FAKE_TRAIN,
-		MODELS_DIR: join(work, "models"),
-		// "slowsetup" runs simulate a long pip install that Pause must kill.
+		// "slowsetup" runs simulate a long, shared engine install.
 		prepareEnvironment: async (_log: string, runId: string) => {
-			if (runId.includes("slowsetup")) {
-				const { exitCode } = await actual.runProcess(["sleep", "30"], { runId });
-				if (exitCode !== 0) throw new Error("pip install failed");
-			}
+			if (runId.includes("slowsetup")) await new Promise(r => setTimeout(r, 30_000));
 			return "/bin/sh";
 		},
 	};
@@ -179,7 +179,7 @@ describe.skipIf(IS_WIN)("training runs", () => {
 		await until(() => !alive(pid), "worker to die");
 	});
 
-	it("pause during setup kills the install and never starts training", async () => {
+	it("pause during setup stops waiting at once and never starts training", async () => {
 		await start("slowsetup");
 		await new Promise(r => setTimeout(r, 200));
 		await trainingHandlers.stopTraining({ runId: "slowsetup" });

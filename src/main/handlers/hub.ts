@@ -3,10 +3,11 @@ import { mkdir, appendFile } from "fs/promises";
 import { join } from "path";
 import {
 	HUB_LOGS_DIR, PUSH_SCRIPT, VENV_PYTHON,
-	prepareEnvironment, streamProcessOutput, coalescePipProgress,
+	streamProcessOutput, coalescePipProgress,
 	runWithPTY, modelPath as getModelPath, safeName,
 } from "../util";
 import { exp, readLogFile } from "../common";
+import { prepareEnvironment } from "../engine";
 
 export const hubHandlers = {
 	startHubPush: async ({ outputPath, repoId, token, runName }: {

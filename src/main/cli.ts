@@ -13,7 +13,8 @@ import { existsSync } from "fs";
 import { join, basename } from "path";
 import { createHash } from "crypto";
 import { tmpdir } from "os";
-import { YOLO_DIR, runInference } from "./util";
+import { YOLO_DIR } from "./util";
+import { runInference } from "./engine";
 
 // Embedded at compile time by bun build --compile
 // `with { type: "file" }` tells Bun to embed the file and gives back a path.

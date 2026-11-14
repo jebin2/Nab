@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 
 // Channels the main process may push to the renderer.
-const EVENT_CHANNELS = new Set(["training:status", "training:log"]);
+const EVENT_CHANNELS = new Set(["training:status", "training:log", "engine:status"]);
 
 contextBridge.exposeInMainWorld("electronAPI", {
   invoke: (channel: string, params?: unknown) => ipcRenderer.invoke(channel, params),

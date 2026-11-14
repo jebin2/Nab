@@ -6,6 +6,7 @@ import { type NavPage, type Asset } from "./lib/types";
 import Overview from "./pages/Overview";
 import { useStudioState } from "./lib/useStudioState";
 import { useTrainingRuns } from "./lib/useTrainingRuns";
+import EngineSetupBanner from "./components/EngineSetupBanner";
 
 // Lazy-load non-initial pages so they don't bloat the startup bundle.
 const Assets    = lazy(() => import("./pages/Assets"));
@@ -40,7 +41,9 @@ function Content() {
   return (
     <>
       <Sidebar activePage={activePage} onNavigate={navigate} />
-      <main style={{ flex: 1, overflow: "hidden", display: "flex" }}>
+      <main style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+        <EngineSetupBanner />
+        <div style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex" }}>
         <ErrorBoundary key={activePage} page={activePage}>
           <Suspense fallback={null}>
             {activePage === "overview"  && <Overview assets={assets} runs={runs} onNavigate={navigate} />}
@@ -65,6 +68,7 @@ function Content() {
             {activePage === "hub"       && <PushHub runs={runs} />}
           </Suspense>
         </ErrorBoundary>
+        </div>
       </main>
     </>
   );

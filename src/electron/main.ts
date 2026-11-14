@@ -7,6 +7,7 @@ import { runningProcesses } from "../main/util";
 import { assetHandlers } from "../main/handlers/assets";
 import { trainingHandlers, trainingEvents } from "../main/handlers/training";
 import { killTree } from "../main/managedProcess";
+import { engineHandlers, engineEvents } from "../main/engine";
 import { inferenceHandlers } from "../main/handlers/inference";
 import { exportHandlers } from "../main/handlers/export";
 import { hubHandlers } from "../main/handlers/hub";
@@ -71,6 +72,7 @@ const allHandlers: Record<string, (params?: any) => unknown> = {
 	...inferenceHandlers,
 	...exportHandlers,
 	...hubHandlers,
+	...engineHandlers,
 };
 
 for (const [channel, handler] of Object.entries(allHandlers)) {
@@ -85,6 +87,7 @@ function sendToWindow(channel: string, payload: unknown): void {
 
 trainingEvents.on("status", ev => sendToWindow("training:status", ev));
 trainingEvents.on("log",    ev => sendToWindow("training:log", ev));
+engineEvents.on("status",   ev => sendToWindow("engine:status", ev));
 
 // ── Windows ───────────────────────────────────────────────────────────────────
 

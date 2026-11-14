@@ -1,5 +1,6 @@
 import { join } from "path";
-import { YOLO_DIR, INFER_SCRIPT, runInference as runInferenceUtil, modelPath as getModelPath, fileExists } from "../util";
+import { YOLO_DIR, INFER_SCRIPT, modelPath as getModelPath, fileExists } from "../util";
+import { runInference as runInferenceUtil } from "../engine";
 import { exp } from "../common";
 
 export const inferenceHandlers = {
