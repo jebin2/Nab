@@ -419,14 +419,18 @@ export async function buildCLIArtifact(modelPath: string, outBinary: string, run
 		const proc = spawn(bun, buildArgs, { stdio: ["ignore", "pipe", "pipe"] });
 		runningProcesses.set(runId, proc);
 		try {
+			// If Bun fails to start, its pipes never emit "end", so don't wait on
+			// the output in that case.
+			let spawnFailed = false;
 			const exited = new Promise<number>(resolve => {
-				proc.on("error", err => { stderr += `${err.message}\n`; resolve(1); });
+				proc.on("error", err => { spawnFailed = true; stderr += `${err.message}\n`; resolve(1); });
 				proc.on("close", code => resolve(code ?? 0));
 			});
-			await streamProcessOutput(proc, {
+			const streamed = streamProcessOutput(proc, {
 				stderrHandler: async line => { stderr += line + "\n"; },
 			});
 			const exitCode = await exited;
+			if (!spawnFailed) await streamed;
 			if (exitCode !== 0) return stderr.trim() || "Unknown build failure";
 			return null;
 		} finally {

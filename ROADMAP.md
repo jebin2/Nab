@@ -111,8 +111,10 @@ Engine-independent fixes. Ship, then launch.
       `extraResources` and call it by full path. *Code done 2026-11-14:*
       `scripts/fetch-bun.mjs` downloads a pinned Bun (1.2.19, checked against
       SHA-256) into `vendor/bun/`, which ships as `resources/bun/`, and CI runs it
-      before packaging. **Still to do:** run the script, export a CLI in dev, then
-      do the same from a packaged build on a machine without Bun.
+      before packaging. *Tested 2026-11-14 on Linux x64:* the script downloads
+      and verifies Bun; `buildCLIArtifact` compiles a working CLI with no Bun on
+      PATH; a missing Bun returns an error instead of hanging. **Still to do:**
+      export from a packaged build, and on macOS and Windows.
 - [x] **Fix the README install steps** (drop 7-Zip / `zip` if confirmed stale).
 - [ ] **Pin runtime versions:** a fixed `python-build-standalone` release tag
       instead of `latest`, and pinned `ultralytics` / `torch` / `psutil`
