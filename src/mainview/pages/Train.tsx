@@ -6,21 +6,22 @@ import NewRunModal from "../components/NewRunModal";
 import DeleteConfirmModal from "../components/DeleteConfirmModal";
 import PageLayout from "../components/PageLayout";
 import { type TrainingRun, type Asset } from "../lib/types";
-import { useTrainingRuns } from "../lib/useTrainingRuns";
+import { type TrainingRunsApi } from "../lib/useTrainingRuns";
 import { primaryBtn } from "../lib/styleUtils";
 
 interface Props {
   assets: Asset[];
   runs: TrainingRun[];
   onRunsChange: (runs: TrainingRun[]) => void;
+  training: TrainingRunsApi;
 }
 
-export default function Train({ assets, runs, onRunsChange }: Props) {
+export default function Train({ assets, runs, onRunsChange, training }: Props) {
   const [showModal, setShowModal]       = useState(false);
   const [detailRun, setDetailRun]       = useState<TrainingRun | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<TrainingRun | null>(null);
 
-  const { runProgress, startRun, pauseRun, stopRun } = useTrainingRuns(runs, onRunsChange, assets);
+  const { runProgress, startRun, pauseRun, stopRun } = training;
 
   if (detailRun) {
     const liveRun = runs.find(r => r.id === detailRun.id) ?? detailRun;

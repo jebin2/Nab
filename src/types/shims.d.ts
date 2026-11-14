@@ -13,5 +13,6 @@ declare module "*.py" {
 interface Window {
   electronAPI: {
     invoke: (channel: string, params?: unknown) => Promise<unknown>;
+    on: (channel: string, listener: (payload: unknown) => void) => () => void;
   };
 }

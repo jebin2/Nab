@@ -26,6 +26,7 @@ Progress and results are written to stdout as newline-delimited JSON:
 
 import json
 import os
+import signal
 import sys
 import yaml
 from pathlib import Path
@@ -137,6 +138,53 @@ def get_gpu_mb() -> int | None:
 
 
 # ── training callback ──────────────────────────────────────────────────────────
+
+# ── Graceful stop ──────────────────────────────────────────────────────────────
+# Nab pauses a run with SIGTERM. Exiting while Ultralytics writes last.pt would
+# leave a corrupt checkpoint that can't be resumed, so between the end of an
+# epoch and the checkpoint being saved, the stop is deferred until the save
+# finishes. At any other time we exit at once. Nab force-kills after a timeout.
+
+_in_save_window = False
+_stop_requested = False
+
+
+def _exit_now() -> None:
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(0)
+
+
+def _on_sigterm(signum, frame) -> None:
+    global _stop_requested
+    if _in_save_window:
+        _stop_requested = True
+        print("[train] Pause requested; finishing checkpoint save first...", file=sys.stderr, flush=True)
+    else:
+        _exit_now()
+
+
+def _enter_save_window(trainer) -> None:
+    global _in_save_window
+    _in_save_window = True
+
+
+def _leave_save_window(trainer) -> None:
+    global _in_save_window
+    _in_save_window = False
+    if _stop_requested:
+        _exit_now()
+
+
+def install_graceful_stop(model) -> None:
+    if hasattr(signal, "SIGTERM"):
+        signal.signal(signal.SIGTERM, _on_sigterm)
+    # Ultralytics order per epoch: on_train_epoch_end → validate → save →
+    # on_model_save → on_fit_epoch_end.
+    model.add_callback("on_train_epoch_end", _enter_save_window)
+    model.add_callback("on_model_save", _leave_save_window)
+    model.add_callback("on_fit_epoch_end", _leave_save_window)
+
 
 def make_on_train_epoch_end(total_epochs: int, task: str):
     # Metric key suffix differs by task: "(M)" = mask (seg), "(B)" = box (det).
@@ -251,6 +299,7 @@ def main():
 
     # Register epoch callback.
     model.add_callback("on_train_epoch_end", make_on_train_epoch_end(epochs, task))
+    install_graceful_stop(model)
 
     # Train (or resume).
     try:

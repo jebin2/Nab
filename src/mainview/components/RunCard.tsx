@@ -3,6 +3,7 @@ import { type TrainingRun, type Asset } from "../lib/types";
 import { RUN_STATUS_LABELS, RUN_STATUS_COLORS, CLASS_COLORS } from "../lib/constants";
 import { type LogProgress } from "../lib/trainLog";
 import { cardHover, statusBadge, mutedText } from "../lib/styleUtils";
+import { formatUpdated } from "../lib/formatTime";
 
 export type RunAction = "view" | "start-fresh" | "resume" | "pause" | "stop" | "delete";
 
@@ -144,7 +145,7 @@ export function RunCard({ run, assets, progress, onAction }: RunCardProps) {
             <FolderOpen size={10} style={{ display: "inline", marginRight: 4, verticalAlign: "middle" }} />
             {run.outputPath}
           </div>
-          <div style={mutedText}>Updated {run.updatedAt}</div>
+          <div style={mutedText}>Updated {formatUpdated(run.updatedAt)}</div>
         </div>
       </div>
     </div>

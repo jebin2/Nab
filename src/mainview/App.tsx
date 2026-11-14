@@ -5,6 +5,7 @@ import { ToastProvider } from "./lib/useToast";
 import { type NavPage, type Asset } from "./lib/types";
 import Overview from "./pages/Overview";
 import { useStudioState } from "./lib/useStudioState";
+import { useTrainingRuns } from "./lib/useTrainingRuns";
 
 // Lazy-load non-initial pages so they don't bloat the startup bundle.
 const Assets    = lazy(() => import("./pages/Assets"));
@@ -18,6 +19,8 @@ function Content() {
   const [activePage, setActivePage]   = useState<NavPage>("overview");
   const [activeAsset, setActiveAsset] = useState<Asset | null>(null);
   const { assets, setAssets, runs, setRuns } = useStudioState();
+  // Lives here, not in the Train page, so run status stays live on every page.
+  const training = useTrainingRuns(runs, setRuns, assets);
 
   function navigate(page: NavPage) {
     setActivePage(page);
@@ -56,7 +59,7 @@ function Content() {
                 onBack={() => setActiveAsset(null)}
               />
             )}
-            {activePage === "train"     && <Train assets={assets} runs={runs} onRunsChange={setRuns} />}
+            {activePage === "train"     && <Train assets={assets} runs={runs} onRunsChange={setRuns} training={training} />}
             {activePage === "inference" && <Inference runs={runs} />}
             {activePage === "export"    && <Export runs={runs} />}
             {activePage === "hub"       && <PushHub runs={runs} />}

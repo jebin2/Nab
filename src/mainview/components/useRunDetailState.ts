@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { getRPC } from "../lib/rpc";
-import { useLogPoller } from "../lib/useLogPoller";
+import { getRPC, onEvent } from "../lib/rpc";
 import { parseLog, type LogProgress } from "../lib/trainLog";
 import { parseLogLine } from "../lib/logParser";
 import { type TrainingRun } from "../lib/types";
@@ -13,11 +12,23 @@ export function useRunDetailState(run: TrainingRun, progress?: LogProgress) {
   const [lines, setLines] = useState<string[]>([]);
   const [runMeta, setRunMeta] = useState<DatasetUpdateMeta | null>(null);
 
-  useLogPoller(
-    true,
-    () => getRPC().request.readTrainingLog({ outputPath: run.outputPath }).then(r => r.lines),
-    setLines,
-  );
+  // Load the log once, then append lines as the main process pushes them.
+  // Lines pushed while the initial read is in flight are queued and added after.
+  useEffect(() => {
+    let loaded = false;
+    let queued: string[] = [];
+    const off = onEvent("training:log", ev => {
+      if (ev.runId !== run.id) return;
+      if (ev.reset) { queued = []; setLines([]); return; }
+      if (!loaded) { queued.push(...ev.lines); return; }
+      setLines(prev => [...prev, ...ev.lines]);
+    });
+    getRPC().request.readTrainingLog({ outputPath: run.outputPath })
+      .then(r => setLines(dedupeTail(r.lines, queued)))
+      .catch(() => setLines(queued))
+      .finally(() => { loaded = true; queued = []; });
+    return off;
+  }, [run.id, run.outputPath]);
 
   useEffect(() => {
     getRPC().request.readRunMeta({ outputPath: run.outputPath }).then(setRunMeta).catch(() => {});
@@ -59,6 +70,23 @@ export function useRunDetailState(run: TrainingRun, progress?: LogProgress) {
     mAP5095,
     editable,
   };
+}
+
+/**
+ * Joins the log read from disk with lines pushed while it was being read.
+ * Those pushed lines may already be in the file, so skip any that are.
+ */
+export function dedupeTail(fileLines: string[], pushed: string[]): string[] {
+  if (pushed.length === 0) return fileLines;
+  // Longest suffix of the file that equals a prefix of the pushed lines.
+  for (let k = Math.min(pushed.length, fileLines.length); k > 0; k--) {
+    let match = true;
+    for (let i = 0; i < k; i++) {
+      if (fileLines[fileLines.length - k + i] !== pushed[i]) { match = false; break; }
+    }
+    if (match) return [...fileLines, ...pushed.slice(k)];
+  }
+  return [...fileLines, ...pushed];
 }
 
 export function getPeakUsage(lines: string[], metric: "ramMB" | "gpuMB"): number | null {

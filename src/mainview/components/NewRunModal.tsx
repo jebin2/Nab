@@ -5,6 +5,7 @@ import { Field, NumField, inputStyle } from "./FormFields";
 import CustomSelect from "./CustomSelect";
 import { type TrainingRun, type Asset } from "../lib/types";
 import { BASE_MODELS_SEG, BASE_MODELS_DET, DEVICES, CLASS_COLORS } from "../lib/constants";
+import { nowStamp } from "../lib/formatTime";
 import { getRPC } from "../lib/rpc";
 
 const DEFAULT_EPOCHS = 100;
@@ -96,7 +97,7 @@ export default function NewRunModal({ assets, runs, onClose, onCreate }: Props) 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!outputPath || selectedAssets.length === 0 || nameConflict) return;
-    onCreate({ id: crypto.randomUUID(), name: name.trim(), assetIds: selectedAssets, classMap, baseModel: effectiveModel, epochs, batchSize, imgsz, device, outputPath, status: "idle", updatedAt: "just now" });
+    onCreate({ id: crypto.randomUUID(), name: name.trim(), assetIds: selectedAssets, classMap, baseModel: effectiveModel, epochs, batchSize, imgsz, device, outputPath, status: "idle", updatedAt: nowStamp() });
   }
 
   const valid = outputPath && selectedAssets.length > 0 && !nameConflict;

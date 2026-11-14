@@ -15,17 +15,20 @@ export function useLogPoller(
   useEffect(() => {
     if (!enabled) return;
     let active = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
 
+    // Each poll starts only after the previous one finished, so slow reads
+    // can't pile up.
     async function poll() {
       if (!active) return;
       try {
         const lines = await fetcherRef.current();
         if (active) onLinesRef.current(lines);
       } catch {}
+      if (active) timer = setTimeout(poll, POLL_INTERVAL_MS);
     }
 
     poll();
-    const id = setInterval(poll, POLL_INTERVAL_MS);
-    return () => { active = false; clearInterval(id); };
+    return () => { active = false; clearTimeout(timer); };
   }, [enabled]);
 }

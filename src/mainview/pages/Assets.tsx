@@ -7,6 +7,7 @@ import { Field, inputStyle } from "../components/FormFields";
 import { CLASS_COLORS } from "../lib/constants";
 import { getRPC } from "../lib/rpc";
 import DeleteConfirmModal from "../components/DeleteConfirmModal";
+import { formatUpdated, nowStamp } from "../lib/formatTime";
 import { cardHover, deleteHover, ghostBtn, primaryBtn, mutedText } from "../lib/styleUtils";
 
 interface Props {
@@ -28,7 +29,7 @@ export default function Assets({ assets, runs, onAssetsChange, onOpenAsset }: Pr
       classes:        [],
       imageCount:     0,
       annotatedCount: 0,
-      updatedAt:      "just now",
+      updatedAt:      nowStamp(),
       thumbnailColor: THUMBNAIL_COLORS[assets.length % THUMBNAIL_COLORS.length],
     };
     onAssetsChange([...assets, asset]);
@@ -200,7 +201,7 @@ function AssetCard({ asset, onClick, onDelete }: { asset: Asset; onClick: () => 
             <FolderOpen size={10} style={{ display: "inline", marginRight: 4, verticalAlign: "middle" }} />
             {asset.storagePath}
           </div>
-          <div style={mutedText}>Updated {asset.updatedAt}</div>
+          <div style={mutedText}>Updated {formatUpdated(asset.updatedAt)}</div>
         </div>
       </div>
     </div>

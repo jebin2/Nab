@@ -7,6 +7,7 @@ import {
 	buildCLIArtifact, coalescePipProgress, parseLastJsonLine, safeName, fileExists,
 } from "../util";
 import { exp, readLogFile } from "../common";
+import { killTree } from "../managedProcess";
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
@@ -77,7 +78,7 @@ export const exportHandlers = {
 
 	cancelExport: async ({ runId }: { runId: string }) => {
 		const proc = runningProcesses.get(runId);
-		if (proc) { proc.kill(9); runningProcesses.delete(runId); }
+		if (proc) { killTree(proc); runningProcesses.delete(runId); }
 		return {};
 	},
 

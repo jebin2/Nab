@@ -26,12 +26,13 @@ export interface Asset {
   hasPolygons?: boolean;
 }
 
-export type RunStatus = "idle" | "installing" | "training" | "paused" | "done" | "failed";
+export type RunStatus = "idle" | "installing" | "training" | "stopping" | "paused" | "done" | "failed";
 
 export const RunStatus = {
 	IDLE: "idle",
 	INSTALLING: "installing",
 	TRAINING: "training",
+	STOPPING: "stopping",
 	PAUSED: "paused",
 	DONE: "done",
 	FAILED: "failed",

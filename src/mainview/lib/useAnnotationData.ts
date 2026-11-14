@@ -3,6 +3,7 @@ import { type BBox, type ClassDef, type ImageEntry } from "./annotationTypes";
 import { type Asset } from "./types";
 import { loadImageSrc } from "./imageLoader";
 import { getRPC } from "./rpc";
+import { nowStamp } from "./formatTime";
 import { CLASS_COLORS } from "./constants";
 
 export function useAnnotationData(asset: Asset, onAssetUpdate: (updated: Asset) => void) {
@@ -37,7 +38,7 @@ export function useAnnotationData(asset: Asset, onAssetUpdate: (updated: Asset) 
           annotatedCount: imagesRef.current.filter(i => i.annotations.length > 0).length,
           classes:        classesRef.current.map(c => c.name),
           hasPolygons:    imagesRef.current.some(i => i.annotations.some(a => a.points && a.points.length >= 3)),
-          updatedAt:      "just now",
+          updatedAt:      nowStamp(),
         });
       }
       if (canvasSrcRef.current.startsWith("blob:")) URL.revokeObjectURL(canvasSrcRef.current);

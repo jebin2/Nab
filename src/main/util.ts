@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "child_process";
 import { access, appendFile, copyFile, mkdir, mkdtemp, rm, unlink, writeFile } from "fs/promises";
 import { join } from "path";
 import { homedir, tmpdir } from "os";
+import { killTree } from "./managedProcess";
 
 // ── Resource paths ────────────────────────────────────────────────────────────
 // Resolved lazily so the module can be imported in non-Electron environments
@@ -177,13 +178,15 @@ export async function runProcess(
 	const proc = spawn(executable, args, {
 		stdio: ["pipe", "pipe", "pipe"],
 		env:   env ? { ...process.env, ...env } : process.env as Record<string, string>,
+		// Own process group, so killTree() also stops children (pip under `script`).
+		detached: !IS_WIN,
 	});
 
 	if (runId) {
 		const existing = runningProcesses.get(runId);
 		if (existing) {
 			console.log(`[util] Killing existing process for runId: ${runId}`);
-			existing.kill("SIGKILL");
+			killTree(existing);
 			runningProcesses.delete(runId);
 		}
 		runningProcesses.set(runId, proc);
@@ -434,7 +437,7 @@ export async function buildCLIArtifact(modelPath: string, outBinary: string, run
 		if (!bun) return "The bundled Bun compiler is missing. Reinstall Nab, or run `node scripts/fetch-bun.mjs` in a dev checkout.";
 
 		const buildArgs = ["build", "--compile", "--minify", join(buildDir, "cli.ts"), "--outfile", outBinary];
-		const proc = spawn(bun, buildArgs, { stdio: ["ignore", "pipe", "pipe"] });
+		const proc = spawn(bun, buildArgs, { stdio: ["ignore", "pipe", "pipe"], detached: !IS_WIN });
 		runningProcesses.set(runId, proc);
 		try {
 			// If Bun fails to start, its pipes never emit "end", so don't wait on

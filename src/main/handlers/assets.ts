@@ -51,7 +51,7 @@ export const assetHandlers = {
 				const data = JSON.parse(await readFile(studioFile, "utf-8"));
 				if (Array.isArray(data.runs)) {
 					data.runs = data.runs.map((r: { status: string }) =>
-						r.status === "training" || r.status === "installing"
+						r.status === "training" || r.status === "installing" || r.status === "stopping"
 							? { ...r, status: "paused" } : r
 					);
 				}

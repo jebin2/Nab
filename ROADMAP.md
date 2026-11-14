@@ -127,13 +127,17 @@ Engine-independent fixes. Ship, then launch.
       report now shows an error instead of "training" forever; log lines stay in
       order; the setup check looks for `ultralytics`/`torch`; folder exports zip
       with Python instead of the `zip` command (missing on Windows).
-- [ ] **One process helper with live push events:** a single `ManagedProcess`
-      (start, stream, exit, stop with SIGTERM then SIGKILL, kill worker
-      processes) and push log events to the UI over IPC instead of re-reading
-      `train.log` every second. Also makes Pause during dataset copy or install
-      actually stop the run, and blocks double starts.
-- [ ] **Main process owns run status** and pushes changes to the UI; store
-      `updatedAt` as a timestamp instead of the text "just now".
+- [x] **One process helper with live push events:** `src/main/managedProcess.ts`
+      (start, ordered lines, exit, SIGTERM then SIGKILL, kills worker
+      processes). Training status and log lines are pushed over IPC
+      (`training:status`, `training:log`); no more re-reading `train.log` every
+      second. Pause works during dataset copy and install; double starts are
+      refused; `train.py` defers a pause until a checkpoint save finishes.
+      *Windows:* no SIGTERM there, so Pause is still a hard kill.
+- [x] **Main process owns run status** and pushes changes; the UI re-syncs
+      after a reload. `updatedAt` is now a timestamp ("5 min ago").
+- [ ] **Try the above with real training** (pause mid-epoch, resume, stop,
+      pause during first-run install) on Linux, macOS and Windows.
 - [ ] **Training presets:** Quick test / Good / Best, mapped to model size and
       epochs; current controls move under "Advanced".
 - [ ] **Licence:** add `LICENSE` (AGPL-3.0 for now) and a README note on what it

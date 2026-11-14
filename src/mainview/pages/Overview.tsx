@@ -1,6 +1,7 @@
 import { Layers, Cpu, Image, Tag, ArrowRight } from "lucide-react";
 import { type NavPage, type Asset, type TrainingRun } from "../lib/types";
 import { RUN_STATUS_COLORS, RUN_STATUS_LABELS, CLASS_COLORS } from "../lib/constants";
+import { formatUpdated } from "../lib/formatTime";
 import { mutedText } from "../lib/styleUtils";
 
 interface Props {
@@ -163,7 +164,7 @@ function RunRow({ run }: { run: TrainingRun }) {
           {run.baseModel} · {label}{run.mAP != null ? ` · mAP ${run.mAP.toFixed(3)}` : ""}
         </div>
       </div>
-      <span style={{ fontSize: 11, color: "var(--text-muted)", flexShrink: 0 }}>{run.updatedAt}</span>
+      <span style={{ fontSize: 11, color: "var(--text-muted)", flexShrink: 0 }}>{formatUpdated(run.updatedAt)}</span>
     </div>
   );
 }

@@ -5,7 +5,8 @@ import { createReadStream, existsSync } from "fs";
 import { extname, join } from "path";
 import { runningProcesses } from "../main/util";
 import { assetHandlers } from "../main/handlers/assets";
-import { trainingHandlers } from "../main/handlers/training";
+import { trainingHandlers, trainingEvents } from "../main/handlers/training";
+import { killTree } from "../main/managedProcess";
 import { inferenceHandlers } from "../main/handlers/inference";
 import { exportHandlers } from "../main/handlers/export";
 import { hubHandlers } from "../main/handlers/hub";
@@ -75,6 +76,15 @@ const allHandlers: Record<string, (params?: any) => unknown> = {
 for (const [channel, handler] of Object.entries(allHandlers)) {
 	ipcMain.handle(channel, (_event, params) => handler(params));
 }
+
+// ── Pushed events (main → renderer) ───────────────────────────────────────────
+
+function sendToWindow(channel: string, payload: unknown): void {
+	if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
+}
+
+trainingEvents.on("status", ev => sendToWindow("training:status", ev));
+trainingEvents.on("log",    ev => sendToWindow("training:log", ev));
 
 // ── Windows ───────────────────────────────────────────────────────────────────
 
@@ -188,7 +198,7 @@ app.on("window-all-closed", () => { /* keep process alive */ });
 
 function killAll(): void {
 	for (const [, proc] of runningProcesses) {
-		try { proc.kill(9); } catch {}
+		try { killTree(proc, "SIGKILL"); } catch {}
 	}
 	runningProcesses.clear();
 }

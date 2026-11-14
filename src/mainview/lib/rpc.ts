@@ -1,7 +1,7 @@
 // Singleton IPC channel between the renderer and the Electron main process.
 // Call initRPC() once at startup before rendering the app.
 
-import { type Asset, type TrainingRun } from "./types";
+import { type Asset, type TrainingRun, type RunStatus } from "./types";
 
 type EmptyParams = Record<string, never>;
 type EmptyResponse = Record<string, never>;
@@ -99,6 +99,7 @@ type RPCSchema = {
   readRunMeta:           { params: OutputPathParams;      response: RunMetaResponse };
   updateDataset:         { params: OutputPathParams;      response: UpdateDatasetResponse };
   stopTraining:          { params: StopTrainingParams;    response: EmptyResponse };
+  getTrainingStatus:     { params: EmptyParams;           response: { statuses: Record<string, RunStatus> } };
   exportModel:           { params: ExportModelParams;     response: ExportResult };
   buildAndDownloadCLI:   { params: CliBuildParams;        response: CliBuildResult };
   exportCLI:             { params: ExportCliParams;       response: ExportCliResult };
@@ -120,6 +121,27 @@ type RPC = {
     ) => Promise<RPCSchema[K]["response"]>;
   };
 };
+
+// ── Pushed events (main → renderer) ───────────────────────────────────────────
+
+export type TrainingStatusEvent = {
+  runId: string; status: RunStatus; at: number;
+  mAP?: number; message?: string;
+};
+export type TrainingLogEvent = { runId: string; lines: string[]; reset?: boolean };
+
+type EventSchema = {
+  "training:status": TrainingStatusEvent;
+  "training:log":    TrainingLogEvent;
+};
+
+/** Subscribe to an event pushed by the main process. Returns an unsubscribe function. */
+export function onEvent<K extends keyof EventSchema>(
+  channel: K,
+  listener: (payload: EventSchema[K]) => void,
+): () => void {
+  return window.electronAPI.on(channel, payload => listener(payload as EventSchema[K]));
+}
 
 let _rpc: RPC | null = null;
 let _bridgeConfig: BridgeConfig | null = null;
