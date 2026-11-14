@@ -74,9 +74,23 @@ When creating a training run, Nab inspects every selected asset's annotations an
 | **Start again** | `done` | Resets to epoch 0; discards previous weights |
 | **Retry** | `failed` | Same as Start again — clean slate |
 | **Resume** | `paused` | Continues from the last saved checkpoint; refreshes the dataset snapshot (adds new images, drops deleted ones) |
-| **Pause** | `training` | Sends SIGKILL to the trainer; checkpoint is preserved so Resume works |
-| **Stop** | `training` / `paused` | Sends SIGKILL and deletes the checkpoint; run returns to `idle` |
+| **Pause** | `installing` / `training` | Stops the run (status shows *Stopping…*). If a checkpoint is being saved, training finishes the save first; after 60 s it is force-stopped. The checkpoint is kept so Resume works. On Windows, Pause stops training immediately. |
+| **Stop** | `installing` / `training` / `paused` | Stops the run the same way, then deletes the checkpoint and log; run returns to `idle` |
 
 ### Dataset on Resume
 
 Resume uses the existing dataset copy as-is — no rescan. The images and labels that were copied when the run was last started are reused unchanged. To pick up annotation edits or new images, use the **Update Dataset** button (visible when drift is detected) before resuming, or start a fresh run.
+
+## Licence
+
+Nab is licensed under the [GNU AGPL-3.0](LICENSE).
+
+**What this means for models you train:** Nab currently trains with
+[Ultralytics YOLO](https://github.com/ultralytics/ultralytics), which is AGPL-3.0.
+Ultralytics says models trained with it are also covered by AGPL-3.0 unless you
+buy their Enterprise licence. In practice: personal, research and open-source
+use is fine; if you ship a trained model inside a closed-source or commercial
+product, check [Ultralytics' licensing](https://www.ultralytics.com/license) first.
+
+We plan to move to a permissively licensed training engine and relicense Nab
+as MIT, so that the models you train are fully yours. See [ROADMAP.md](ROADMAP.md).

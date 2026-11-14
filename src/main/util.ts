@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "child_process";
-import { access, appendFile, copyFile, mkdir, mkdtemp, rm, unlink, writeFile } from "fs/promises";
+import { access, appendFile, copyFile, mkdir, mkdtemp, readFile, rm, unlink, writeFile } from "fs/promises";
+import { createHash } from "crypto";
 import { join } from "path";
 import { homedir, tmpdir } from "os";
 import { killTree } from "./managedProcess";
@@ -244,47 +245,53 @@ export function modelPath(outputPath: string): string {
 
 // ── downloadPythonRuntime ─────────────────────────────────────────────────────
 
-const PYTHON_PLATFORM_MAP: Record<string, string> = {
-	"linux-x64":    "x86_64-unknown-linux-gnu-install_only_stripped.tar.gz",
-	"linux-arm64":  "aarch64-unknown-linux-gnu-install_only_stripped.tar.gz",
-	"darwin-x64":   "x86_64-apple-darwin-install_only_stripped.tar.gz",
-	"darwin-arm64": "aarch64-apple-darwin-install_only_stripped.tar.gz",
-	"win32-x64":    "x86_64-pc-windows-msvc-install_only_stripped.tar.gz",
+// Pinned python-build-standalone build. Bump deliberately: update the release,
+// version and every checksum (from the release's SHA256SUMS file) together.
+const PYTHON_RELEASE = "20261026";
+const PYTHON_VERSION = "3.12.16";
+const PYTHON_ASSETS: Record<string, { triple: string; sha256: string }> = {
+	"linux-x64":    { triple: "x86_64-unknown-linux-gnu",  sha256: "ce4f6d0a6cfdb3bed6e44c2f9affd85943c76a42e25ad3a259002f31d6fb8a20" },
+	"linux-arm64":  { triple: "aarch64-unknown-linux-gnu", sha256: "bb4b6392670c5d3f93876996fcaa19858a4a413a0c7720144c18b0d6f1f0db2d" },
+	"darwin-x64":   { triple: "x86_64-apple-darwin",       sha256: "37c38fda76fec1fbf310adcbafb7f0d96af13b5511bf8ea954c3aa8eec185734" },
+	"darwin-arm64": { triple: "aarch64-apple-darwin",      sha256: "353d5f1b4fd2715e7053f12f068435d5bbad16b91e057006b5d01e0925709a7e" },
+	"win32-x64":    { triple: "x86_64-pc-windows-msvc",    sha256: "1f2ab53880fc67ea323398c6388e05af28addc99a8e389209f08a51fdff4b149" },
 };
+
+export function pythonRuntimeAsset(platformKey = `${process.platform}-${process.arch}`) {
+	const asset = PYTHON_ASSETS[platformKey];
+	if (!asset) return null;
+	const filename = `cpython-${PYTHON_VERSION}+${PYTHON_RELEASE}-${asset.triple}-install_only_stripped.tar.gz`;
+	return {
+		filename,
+		url: `https://github.com/astral-sh/python-build-standalone/releases/download/${PYTHON_RELEASE}/${encodeURIComponent(filename)}`,
+		sha256: asset.sha256,
+	};
+}
 
 export async function downloadPythonRuntime(
 	destPath: string,
 	log: (text: string) => Promise<void>,
 ): Promise<void> {
 	const platformKey = `${process.platform}-${process.arch}`;
-	const suffix = PYTHON_PLATFORM_MAP[platformKey];
-	if (!suffix) throw new Error(`Unsupported platform for Python download: ${platformKey}`);
+	const asset = pythonRuntimeAsset(platformKey);
+	if (!asset) throw new Error(`Unsupported platform for Python download: ${platformKey}`);
 
-	await log(`[setup] Fetching Python runtime info for ${platformKey}...`);
-	const apiRes = await fetch(
-		"https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest",
-		{ headers: { "User-Agent": "Nab" } },
-	);
-	if (!apiRes.ok) throw new Error(`GitHub API error: ${apiRes.status}`);
-
-	const release = await apiRes.json() as {
-		assets: Array<{ name: string; browser_download_url: string }>;
-	};
-	const asset = release.assets.find(a => a.name.startsWith("cpython-3.12") && a.name.endsWith(suffix));
-	if (!asset) throw new Error(`No Python 3.12 asset found for ${platformKey}`);
-
-	await log(`[setup] Downloading Python runtime: ${asset.name}...`);
-	const dlRes = await fetch(asset.browser_download_url);
+	await log(`[setup] Downloading Python runtime: ${asset.filename}...`);
+	const dlRes = await fetch(asset.url, { headers: { "User-Agent": "Nab" } });
 	if (!dlRes.ok || !dlRes.body) throw new Error(`Download failed: ${dlRes.status}`);
 
 	await mkdir(YOLO_DIR, { recursive: true });
+	const hash = createHash("sha256");
 	const chunks: Uint8Array[] = [];
 	const reader = dlRes.body.getReader();
 	while (true) {
 		const { done, value } = await reader.read();
 		if (done) break;
 		chunks.push(value);
+		hash.update(value);
 	}
+	if (hash.digest("hex") !== asset.sha256)
+		throw new Error("Python runtime download is corrupt (checksum mismatch). Check your connection and try again.");
 	const buf = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0));
 	let offset = 0;
 	for (const c of chunks) { buf.set(c, offset); offset += c.length; }
@@ -316,6 +323,18 @@ export async function runWithPTY(
 }
 
 // ── prepareEnvironment ────────────────────────────────────────────────────────
+
+// Training engine versions installed into ~/.nab/venv. Pinned so a new
+// upstream release can't break new installs. These live in code (not a
+// requirements file) so the standalone CLI export gets them too. Bump on
+// purpose, test training/inference/export, then release; existing installs
+// update on their next start. torch and torchvision must be a matching pair.
+export const ENGINE_REQUIREMENTS = [
+	"ultralytics==8.4.196",
+	"torch==2.14.1",
+	"torchvision==0.29.1",
+	"psutil==7.2.2",
+];
 
 const VENV_CHECK =
 	"import importlib.util as u, sys; " +
@@ -371,6 +390,10 @@ export async function prepareEnvironment(
 		await log("[setup] Python runtime ready.");
 	}
 
+	// The marker holds a hash of the pins, so changing them triggers a
+	// reinstall on the next start.
+	const reqHash = createHash("sha256").update(ENGINE_REQUIREMENTS.join("\n")).digest("hex");
+
 	const venvOk = (await fileExists(VENV_READY_MARKER)) &&
 		await new Promise<boolean>(resolve => {
 			try {
@@ -391,22 +414,16 @@ export async function prepareEnvironment(
 		await log("[setup] Creating virtual environment at ~/.nab/venv...");
 		await run([RUNTIME_PYTHON, "-m", "venv", "--clear", VENV_DIR], "venv create");
 		await log("[setup] Virtual environment created.");
-		await log("[setup] Installing ultralytics (first run only - may take a few minutes)...");
-		await runPip(["ultralytics", "psutil"], "pip install ultralytics psutil");
-		await writeFile(VENV_READY_MARKER, "ready");
+		await log("[setup] Installing the training engine (first run only - may take a few minutes)...");
+		await runPip(ENGINE_REQUIREMENTS, "pip install (training engine)");
+		await writeFile(VENV_READY_MARKER, reqHash);
 		await log("[setup] Environment ready.");
-	} else {
-		const psutilOk = await new Promise<boolean>(resolve => {
-			try {
-				const p = spawn(VENV_PYTHON, ["-c", "import psutil"], { stdio: "ignore" });
-				p.on("close", code => resolve(code === 0));
-				p.on("error", () => resolve(false));
-			} catch { resolve(false); }
-		});
-		if (!psutilOk) {
-			await log("[setup] Installing psutil...");
-			await runPip(["psutil"], "pip install psutil");
-		}
+	} else if ((await readFile(VENV_READY_MARKER, "utf-8").catch(() => "")).trim() !== reqHash) {
+		// Installed with different (or unpinned) versions: bring it to the pins.
+		await log("[setup] Updating the training engine to the pinned versions...");
+		await runPip(ENGINE_REQUIREMENTS, "pip install (training engine)");
+		await writeFile(VENV_READY_MARKER, reqHash);
+		await log("[setup] Environment ready.");
 	}
 
 	return VENV_PYTHON;

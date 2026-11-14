@@ -60,7 +60,7 @@ with no licence fees and no surprises later.
   AppImage (Linux), dmg (macOS) and a portable `.exe` (Windows).
 - Tests: 10 vitest files in `src/__tests__/` (`npm test`). Typecheck:
   `npm run check`.
-- No licence file.
+- Licence: AGPL-3.0 (`LICENSE`), until the engine switch in v0.3.
 
 ### Known problems
 
@@ -77,12 +77,18 @@ confirming by running the app.
    requirements look like leftovers from Electrobun; Electron's installers
    shouldn't need them. *(Confirmed 2026-11-14: electron-builder's NSIS / AppImage /
    dmg targets need neither. Fixed in the README.)*
-3. **Unpinned first-run install.** The latest Python build and the latest
-   `ultralytics` are fetched at install time, so any upstream release can break
-   new installs. On Linux it also pulls about 2–3 GB of PyTorch without warning.
-4. **Licence.** There's none, and the engine (Ultralytics) is AGPL-3.0. Ultralytics
-   also claims models trained with it fall under their licence, which conflicts
-   with the goal. See the licensing section below.
+3. **First-run download is large and unannounced.** On Linux, PyPI's torch
+   pulls about 2–3 GB of CUDA libraries without warning. (Versions are now
+   pinned; see v0.2.)
+4. **Licence.** Now AGPL-3.0, but Ultralytics claims models trained with it fall
+   under their licence, which conflicts with the goal. See the licensing
+   section below.
+6. **No GPU training on Windows.** PyPI's torch wheels for Windows are CPU-only;
+   CUDA builds come from download.pytorch.org. Handle this in the first-run
+   GPU check (install the CUDA build when an NVIDIA GPU is present).
+   *(From PyPI's published wheels; unverified in the app.)*
+7. **No Intel Mac support for training.** torch has no macOS x86_64 wheels for
+   recent versions, and the dmg is Apple Silicon only.
 5. **Repo clutter.** About 188 MB of git history even though the current tree is
    small, so large files were committed at some point. (`stitch.zip`, `stitch/`
    and `.codex` are removed.)
@@ -117,9 +123,13 @@ Engine-independent fixes. Ship, then launch.
       PATH; a missing Bun returns an error instead of hanging. **Still to do:**
       export from a packaged build, and on macOS and Windows.
 - [x] **Fix the README install steps** (drop 7-Zip / `zip` if confirmed stale).
-- [ ] **Pin runtime versions:** a fixed `python-build-standalone` release tag
-      instead of `latest`, and pinned `ultralytics` / `torch` / `psutil`
-      (a requirements file shipped with the app).
+- [x] **Pin runtime versions:** Python 3.12.16 from `python-build-standalone`
+      `20261026`, with a SHA-256 per platform stored in code; `ultralytics` 8.4.196,
+      `torch` 2.14.1, `torchvision` 0.29.1, `psutil` 7.2.2 in
+      `ENGINE_REQUIREMENTS` (`src/main/util.ts`; in code so the CLI export gets
+      them too). Existing installs update to the pins on their next start.
+      Checked 2026-11-14: all downloads exist and the set resolves with pip.
+      Transitive dependencies (numpy, opencv, ...) are still unpinned.
 - [ ] **First-run screen:** download size, real progress, time estimate, GPU
       check with a plain-language result, retry on failure.
 - [x] **Process exit fixes:** a killed process no longer counts as success
@@ -140,8 +150,8 @@ Engine-independent fixes. Ship, then launch.
       pause during first-run install) on Linux, macOS and Windows.
 - [ ] **Training presets:** Quick test / Good / Best, mapped to model size and
       epochs; current controls move under "Advanced".
-- [ ] **Licence:** add `LICENSE` (AGPL-3.0 for now) and a README note on what it
-      means for trained models.
+- [x] **Licence:** `LICENSE` (AGPL-3.0) and a README section on what it means
+      for trained models.
 - [x] **Clean up:** remove `stitch.zip`, `stitch/` and `.codex`; rename `src/bun/` to
       `src/main/` (or similar) and fix imports and `electron-builder.config.ts`.
 - [ ] **Shrink git history** (optional): find the large blobs and decide whether
