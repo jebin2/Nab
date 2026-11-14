@@ -20,11 +20,11 @@
 		"electron.vite.config.*",
 		"electron-builder.config.*",
 		"src/electron/**/*",
-		"src/bun/**/*",
+		"src/main/**/*",
 		"src/types/**/*"
 	],
 	"exclude": [
 		"node_modules",
-		"src/bun/cli.ts"
+		"src/main/cli.ts"
 	]
 }

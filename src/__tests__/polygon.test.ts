@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isAxisAlignedRect, isTruePolygon, parseSegmentationLine, type Point } from "../bun/polygon";
+import { isAxisAlignedRect, isTruePolygon, parseSegmentationLine, type Point } from "../main/polygon";
 
 describe("parseSegmentationLine", () => {
 	it("parses valid segmentation line", () => {

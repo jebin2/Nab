@@ -13,8 +13,10 @@ export default {
 		{ from: "resources/app.ico",  to: "app.ico"  },
 		{ from: "resources/app.icns", to: "app.icns" },
 		{ from: "src/python", to: "python", filter: ["**/*.py"] },
-		{ from: "src/bun/cli.ts", to: "bun/cli.ts" },
-		{ from: "src/bun/util.ts", to: "bun/util.ts" },
+		{ from: "src/main/cli.ts", to: "cli/cli.ts" },
+		{ from: "src/main/util.ts", to: "cli/util.ts" },
+		// Pinned Bun for CLI export; fetched by scripts/fetch-bun.mjs.
+		{ from: "vendor/bun", to: "bun", filter: ["bun", "bun.exe"] },
 	],
 	linux: {
 		icon: "resources/app.png",

@@ -20,6 +20,9 @@ jobs:
 
       - run: npm ci
 
+      - name: Fetch pinned Bun (for CLI export)
+        run: node scripts/fetch-bun.mjs
+
       - name: Build (electron-vite)
         run: npm run build
 
@@ -48,6 +51,9 @@ jobs:
           cache: npm
 
       - run: npm ci
+
+      - name: Fetch pinned Bun (for CLI export)
+        run: node scripts/fetch-bun.mjs
 
       - name: Build (electron-vite)
         run: npm run build
@@ -80,6 +86,9 @@ jobs:
           cache: npm
 
       - run: npm ci
+
+      - name: Fetch pinned Bun (for CLI export)
+        run: node scripts/fetch-bun.mjs
 
       - name: Build (electron-vite)
         run: npm run build

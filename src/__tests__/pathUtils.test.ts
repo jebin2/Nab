@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { sortPathsNumerically } from "../bun/pathUtils";
+import { sortPathsNumerically } from "../main/pathUtils";
 
 describe("sortPathsNumerically", () => {
 	it("sorts with numeric awareness", () => {

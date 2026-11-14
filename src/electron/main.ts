@@ -3,12 +3,12 @@ import { randomBytes } from "crypto";
 import { createServer } from "http";
 import { createReadStream, existsSync } from "fs";
 import { extname, join } from "path";
-import { runningProcesses } from "../bun/util";
-import { assetHandlers } from "../bun/handlers/assets";
-import { trainingHandlers } from "../bun/handlers/training";
-import { inferenceHandlers } from "../bun/handlers/inference";
-import { exportHandlers } from "../bun/handlers/export";
-import { hubHandlers } from "../bun/handlers/hub";
+import { runningProcesses } from "../main/util";
+import { assetHandlers } from "../main/handlers/assets";
+import { trainingHandlers } from "../main/handlers/training";
+import { inferenceHandlers } from "../main/handlers/inference";
+import { exportHandlers } from "../main/handlers/export";
+import { hubHandlers } from "../main/handlers/hub";
 
 // ── Startup optimisations ─────────────────────────────────────────────────────
 

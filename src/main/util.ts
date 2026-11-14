@@ -7,19 +7,29 @@ import { homedir, tmpdir } from "os";
 // Resolved lazily so the module can be imported in non-Electron environments
 // (e.g. vitest) without crashing.
 
-function resolveResourceDirs(): { pythonDir: string; bunDir: string } {
+interface ResourceDirs { pythonDir: string; cliDir: string; bunDir: string }
+
+function resolveResourceDirs(): ResourceDirs {
 	try {
 		// eslint-disable-next-line @typescript-eslint/no-require-imports
 		const { app } = require("electron") as typeof import("electron");
-		const base = app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "src");
-		return { pythonDir: join(base, "python"), bunDir: join(base, "bun") };
+		if (app.isPackaged) {
+			const base = process.resourcesPath;
+			return { pythonDir: join(base, "python"), cliDir: join(base, "cli"), bunDir: join(base, "bun") };
+		}
+		return devDirs(app.getAppPath());
 	} catch {
-		const base = join(process.cwd(), "src");
-		return { pythonDir: join(base, "python"), bunDir: join(base, "bun") };
+		return devDirs(process.cwd());
 	}
 }
 
-const { pythonDir: PYTHON_DIR, bunDir: BUN_DIR } = resolveResourceDirs();
+function devDirs(root: string): ResourceDirs {
+	const src = join(root, "src");
+	// vendor/bun is filled by `node scripts/fetch-bun.mjs`.
+	return { pythonDir: join(src, "python"), cliDir: join(src, "main"), bunDir: join(root, "vendor", "bun") };
+}
+
+const { pythonDir: PYTHON_DIR, cliDir: CLI_DIR, bunDir: BUN_DIR } = resolveResourceDirs();
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -30,8 +40,9 @@ export const VENV_DIR          = join(YOLO_DIR, "venv");
 export const RUNTIME_PYTHON    = join(RUNTIME_DIR, "python", IS_WIN ? "python.exe" : "bin/python3");
 export const VENV_PYTHON       = join(VENV_DIR, IS_WIN ? "Scripts/python.exe" : "bin/python");
 export const VENV_READY_MARKER = join(VENV_DIR, ".ready");
-export const CLI_ENTRY         = join(BUN_DIR, "cli.ts");
-export const UTIL_ENTRY        = join(BUN_DIR, "util.ts");
+export const CLI_ENTRY         = join(CLI_DIR, "cli.ts");
+export const UTIL_ENTRY        = join(CLI_DIR, "util.ts");
+export const BUNDLED_BUN       = join(BUN_DIR, IS_WIN ? "bun.exe" : "bun");
 export const TRAIN_SCRIPT      = join(PYTHON_DIR, "train.py");
 export const INFER_SCRIPT      = join(PYTHON_DIR, "infer.py");
 export const LOGGER_SCRIPT     = join(PYTHON_DIR, "logger.py");
@@ -382,6 +393,13 @@ export async function prepareEnvironment(
 
 // ── buildCLIArtifact ──────────────────────────────────────────────────────────
 
+/** Bun used to compile CLI exports: NAB_BUN override, then the bundled copy. */
+async function resolveBun(): Promise<string | null> {
+	const override = process.env.NAB_BUN;
+	if (override) return override;
+	return (await fileExists(BUNDLED_BUN)) ? BUNDLED_BUN : null;
+}
+
 export async function buildCLIArtifact(modelPath: string, outBinary: string, runId: string): Promise<string | null> {
 	const buildDir = await mkdtemp(join(tmpdir(), "nab-cli-"));
 	let stderr = "";
@@ -394,14 +412,21 @@ export async function buildCLIArtifact(modelPath: string, outBinary: string, run
 		await copyFile(LOGGER_SCRIPT,     join(buildDir, "logger.py"));
 		await copyFile(YOLO_UTILS_SCRIPT, join(buildDir, "yolo_utils.py"));
 
+		const bun = await resolveBun();
+		if (!bun) return "The bundled Bun compiler is missing. Reinstall Nab, or run `node scripts/fetch-bun.mjs` in a dev checkout.";
+
 		const buildArgs = ["build", "--compile", "--minify", join(buildDir, "cli.ts"), "--outfile", outBinary];
-		const proc = spawn("bun", buildArgs, { stdio: ["ignore", "pipe", "pipe"] });
+		const proc = spawn(bun, buildArgs, { stdio: ["ignore", "pipe", "pipe"] });
 		runningProcesses.set(runId, proc);
 		try {
+			const exited = new Promise<number>(resolve => {
+				proc.on("error", err => { stderr += `${err.message}\n`; resolve(1); });
+				proc.on("close", code => resolve(code ?? 0));
+			});
 			await streamProcessOutput(proc, {
 				stderrHandler: async line => { stderr += line + "\n"; },
 			});
-			const exitCode = await new Promise<number>(resolve => proc.on("close", code => resolve(code ?? 0)));
+			const exitCode = await exited;
 			if (exitCode !== 0) return stderr.trim() || "Unknown build failure";
 			return null;
 		} finally {

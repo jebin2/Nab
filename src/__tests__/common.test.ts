@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { join } from "path";
 import { homedir } from "os";
-import { exp } from "../bun/common";
+import { exp } from "../main/common";
 
 describe("exp", () => {
 	it("expands tilde to home directory", () => {

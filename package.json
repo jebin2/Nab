@@ -6,7 +6,8 @@
 	"scripts": {
 		"dev": "electron-vite dev",
 		"build": "electron-vite build",
-		"package": "electron-vite build && electron-builder --config electron-builder.config.ts",
+		"fetch-bun": "node scripts/fetch-bun.mjs",
+		"package": "node scripts/fetch-bun.mjs && electron-vite build && electron-builder --config electron-builder.config.ts",
 		"typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
 		"check": "npm run typecheck",
 		"test": "vitest"

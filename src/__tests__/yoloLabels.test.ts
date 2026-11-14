@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseYoloLabels, serializeYoloLabels } from "../bun/yoloLabels";
+import { parseYoloLabels, serializeYoloLabels } from "../main/yoloLabels";
 
 describe("parseYoloLabels", () => {
 	it("parses bounding box line", () => {

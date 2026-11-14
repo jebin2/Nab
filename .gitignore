@@ -9,3 +9,4 @@ out/
 artifacts/
 src/python/__pycache__/
 clauderesume.txt
+vendor/
