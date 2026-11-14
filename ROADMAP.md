@@ -17,7 +17,7 @@ with no licence fees and no surprises later.
 
 ### Principles
 
-- **Zero setup:** one normal installer. No 7-Zip, no Bun, no Python, no terminal.
+- **Zero setup:** one download per platform. No 7-Zip, no Bun, no Python, no terminal.
 - **Plain language first:** "Good / needs more images of X" before mAP charts.
   Expert settings exist, but are tucked away.
 - **Local by default:** images and models never leave the machine unless the
@@ -29,7 +29,8 @@ with no licence fees and no surprises later.
 
 ## The user journey we're building
 
-1. **Install:** one installer per platform, nothing else needed.
+1. **Install:** one file per platform (AppImage / dmg / portable exe), nothing
+   else needed.
 2. **First launch:** "Getting the training engine ready (2.4 GB, about 5 min)",
    with real progress. It checks the GPU and says "Training will be fast" or
    "No GPU: training will be slower".
@@ -55,8 +56,8 @@ with no licence fees and no surprises later.
   / push.
 - On first run, `src/main/util.ts` downloads the latest `python-build-standalone`
   CPython 3.12, creates `~/.nab/venv` and `pip install`s `ultralytics psutil`.
-- Release workflow in `.github/workflows/release.yml` builds AppImage, tar.gz,
-  dmg, zip and an NSIS installer.
+- Release workflow in `.github/workflows/release.yml` builds three files only:
+  AppImage (Linux), dmg (macOS) and a portable `.exe` (Windows).
 - Tests: 10 vitest files in `src/__tests__/` (`npm test`). Typecheck:
   `npm run check`.
 - No licence file.

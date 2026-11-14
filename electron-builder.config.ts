@@ -20,14 +20,14 @@ export default {
 	],
 	linux: {
 		icon: "resources/app.png",
-		target: [{ target: "AppImage" }, { target: "tar.gz" }],
+		target: [{ target: "AppImage" }],
 	},
 	mac: {
 		icon: "resources/app.icns",
-		target: [{ target: "dmg" }, { target: "zip" }],
+		target: [{ target: "dmg" }],
 	},
 	win: {
 		icon: "resources/app.ico",
-		target: [{ target: "nsis" }],
+		target: [{ target: "portable" }],
 	},
 } satisfies Configuration;

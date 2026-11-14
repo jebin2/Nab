@@ -4,14 +4,14 @@ Train custom YOLO object detection models — no code.
 
 ## Install
 
-Download the installer for your platform from the
-[releases page](../../releases) and run it:
+Download the file for your platform from the
+[releases page](../../releases) and run it. Nothing else to install:
 
-- **Windows:** `Nab-Setup-<version>.exe`. You also need the
+- **Windows:** `Nab <version>.exe`, a portable app with no installer. You also need the
   [Microsoft Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe),
   which PyTorch requires (`torch/lib/c10.dll`).
 - **macOS:** `.dmg`
-- **Linux:** `.AppImage` (or the `.tar.gz`)
+- **Linux:** `.AppImage` (make it executable first: `chmod +x Nab-*.AppImage`)
 
 On first launch Nab downloads its training engine (Python and PyTorch) into
 `~/.nab/`. This is a large download, so the first run takes a few minutes.
